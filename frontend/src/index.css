@@ -974,10 +974,13 @@ button.image-tile,
   backdrop-filter: blur(14px);
   background: rgba(2, 6, 23, 0.78);
   display: flex;
+  height: 100dvh;
   inset: 0;
   justify-content: center;
+  overflow: hidden;
   padding: 24px;
   position: fixed;
+  width: 100vw;
   z-index: 50;
 }
 
@@ -990,11 +993,11 @@ button.image-tile,
   display: flex;
   flex-direction: column;
   gap: 14px;
-  height: min(90vh, 820px);
+  height: min(calc(100dvh - 48px), 820px);
   max-width: 1080px;
   overflow: hidden;
   padding: 18px;
-  width: min(100%, 1080px);
+  width: min(calc(100vw - 48px), 1080px);
 }
 
 .preview-header {
@@ -1068,7 +1071,7 @@ button.image-tile,
 
 .preview-frame img {
   display: block;
-  max-height: calc(90vh - 170px);
+  max-height: calc(100dvh - 170px);
   max-width: 100%;
   object-fit: contain;
 }

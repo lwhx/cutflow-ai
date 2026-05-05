@@ -305,8 +305,11 @@ export default function App() {
   useEffect(() => {
     if (!preview) {
       setPreviewScale(1);
+      document.body.style.overflow = '';
       return;
     }
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setPreview(null);
@@ -322,7 +325,10 @@ export default function App() {
       }
     };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
   }, [preview]);
 
   return (
