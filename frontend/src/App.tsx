@@ -7,7 +7,7 @@ import TaskList from './components/TaskList';
 import UploadPanel from './components/UploadPanel';
 import { useObjectUrls } from './hooks/useObjectUrls';
 import type { ImagePreview } from './types/preview';
-import type { TaskDetail, TaskItem, TaskItemStatus, TaskMode } from './types/task';
+import type { TaskDetail, TaskItemRecord, TaskItemStatus, TaskMode } from './types/task';
 import { createUploadFileItem, extractImageFilesFromClipboardData, type UploadFileItem } from './types/upload';
 
 export default function App() {
@@ -24,15 +24,15 @@ export default function App() {
   const filePreviews = useObjectUrls(items);
 
   const taskItemsByFileKey = useMemo(() => {
-    const map = new Map<string, TaskItem>();
+    const map = new Map<string, TaskItemRecord>();
     processedTasks.forEach((detail) => {
       detail.items.forEach((item) => {
-        map.set(item.fileKey, item);
+        map.set(item.fileKey, { taskId: detail.taskId, item });
       });
     });
     if (task) {
       task.items.forEach((item) => {
-        map.set(item.fileKey, item);
+        map.set(item.fileKey, { taskId: task.taskId, item });
       });
     }
     return map;
@@ -238,6 +238,7 @@ export default function App() {
         </aside>
         <section className="right-column" aria-label="处理结果">
           <TaskList disabled={running} items={items} onPreview={setPreview} onRemoveFile={handleRemoveFile} previewUrls={filePreviews} task={task} taskItemsByFileKey={taskItemsByFileKey} />
+
           <LogPanel logs={task?.logs || []} />
         </section>
       </div>

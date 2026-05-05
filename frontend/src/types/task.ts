@@ -8,7 +8,12 @@ export interface TaskItem {
   fileName: string;
   status: TaskItemStatus;
   message: string;
-  downloadUrl?: string | null;
+  downloadUrl: string | null;
+}
+
+export interface TaskItemRecord {
+  taskId: string;
+  item: TaskItem;
 }
 
 export interface TaskDetail {

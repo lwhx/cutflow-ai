@@ -1,4 +1,5 @@
 import json
+import tempfile
 import threading
 import uuid
 from datetime import datetime
@@ -23,6 +24,7 @@ class TaskService:
         self.image_service = ImageService(settings)
         self.client = TudingAIClient(settings)
         self._lock = threading.Lock()
+        self._provider_lock = threading.Lock()
 
     def create_task(self, files: list[UploadFile], mode: TaskMode, border: int, file_keys: list[str] | None = None) -> TaskDetail:
         if not files:
@@ -91,6 +93,13 @@ class TaskService:
     def _task_has_active_items(self, detail: dict[str, Any]) -> bool:
         return any(item["status"] in {"uploading", "submitted", "processing"} for item in detail["items"])
 
+    def _acquire_provider_lock(self, task_id: str) -> bool:
+        while True:
+            if self._is_task_paused(task_id):
+                return False
+            if self._provider_lock.acquire(timeout=1):
+                return True
+
     def _is_task_paused(self, task_id: str) -> bool:
         data = self._read_task_data(task_id)
         detail = data["detail"]
@@ -130,67 +139,79 @@ class TaskService:
         self._finalize_task(task_id)
 
     def _process_single_item(self, task_id: str, file_info: dict[str, str], border: int) -> None:
-        item_id = file_info["itemId"]
-        file_name = file_info["fileName"]
-        local_path = Path(file_info["path"])
-        try:
-            self._update_item(task_id, item_id, status="uploading", message="正在上传图片", log=f"上传图片: {file_name}")
-            uploaded = self.client.upload_local_image(local_path)
-            if uploaded["resized"]:
-                self._append_log(task_id, f"图片超过 {self.settings.max_image_side} 像素，已自动缩小: {file_name}")
-            self._update_item(task_id, item_id, status="submitted", message="扣图任务已提交")
-            remote_task_id = self.client.remove_bg_single(uploaded["image_url"], uploaded["width"], uploaded["height"], border=border)
-            self._append_log(task_id, f"扣图任务已提交: {remote_task_id}")
-            self._update_item(task_id, item_id, status="processing", message="正在等待扣图结果")
-            result = self.client.poll_single_task_result(remote_task_id)
-            output_path = self._build_result_path(task_id, file_name)
-            self.client.download_file(result["result_url"], output_path)
-            self._mark_item_done(task_id, item_id, output_path, "处理完成")
-        except Exception as error:
-            self._mark_item_failed(task_id, item_id, str(error))
-
-    def _process_batch_chunk(self, task_id: str, chunk: list[dict[str, str]], border: int) -> None:
-        uploaded_items: list[dict[str, Any]] = []
-        local_map: dict[str, dict[str, str]] = {}
-        for file_info in chunk:
-            if self._is_task_paused(task_id):
-                self._pause_remaining_items(task_id)
-                break
-            item_id = file_info["itemId"]
-            file_name = file_info["fileName"]
-            try:
-                self._update_item(task_id, item_id, status="uploading", message="正在上传图片", log=f"上传图片: {file_name}")
-                uploaded = self.client.upload_local_image(Path(file_info["path"]))
-                uploaded_items.append({"image": uploaded["image_url"], "width": uploaded["width"], "height": uploaded["height"]})
-                local_map[uploaded["image_url"]] = file_info
-                self._update_item(task_id, item_id, status="submitted", message="已加入批量扣图任务")
-                if uploaded["resized"]:
-                    self._append_log(task_id, f"图片超过 {self.settings.max_image_side} 像素，已自动缩小: {file_name}")
-            except Exception as error:
-                self._mark_item_failed(task_id, item_id, str(error))
-        if not uploaded_items:
+        provider_locked = self._acquire_provider_lock(task_id)
+        if not provider_locked:
             return
         try:
-            parent_task_id = self.client.remove_bg_batch(uploaded_items, border=border)
-            self._append_log(task_id, f"批量任务已提交: {parent_task_id}")
-            items = self.client.poll_batch_task_result(parent_task_id, expected_count=len(uploaded_items))
-            for index, item in enumerate(items):
-                image_url = item.get("image")
-                file_info = local_map.get(image_url) or chunk[index]
-                item_id = file_info["itemId"]
-                result_url = item.get("result_url")
-                if not result_url:
-                    self._mark_item_failed(task_id, item_id, "接口未返回结果地址")
-                    continue
-                output_path = self._build_result_path(task_id, file_info["fileName"])
-                self.client.download_file(result_url, output_path)
+            item_id = file_info["itemId"]
+            file_name = file_info["fileName"]
+            local_path = Path(file_info["path"])
+            try:
+                self._update_item(task_id, item_id, status="uploading", message="正在上传图片", log=f"上传图片: {file_name}")
+                uploaded = self.client.upload_local_image(local_path)
+                if uploaded["resized"]:
+                    self._append_log(task_id, f"图片超过 {self.settings.max_image_side} 像素，已自动缩小: {file_name}")
+                self._update_item(task_id, item_id, status="submitted", message="扣图任务已提交")
+                remote_task_id = self.client.remove_bg_single(uploaded["image_url"], uploaded["width"], uploaded["height"], border=border)
+                self._append_log(task_id, f"扣图任务已提交: {remote_task_id}")
+                self._update_item(task_id, item_id, status="processing", message="正在等待扣图结果")
+                result = self.client.poll_single_task_result(remote_task_id)
+                output_path = self._build_result_path(task_id, file_name)
+                self.client.download_file(result["result_url"], output_path)
                 self._mark_item_done(task_id, item_id, output_path, "处理完成")
-        except Exception as error:
+            except Exception as error:
+                self._mark_item_failed(task_id, item_id, str(error))
+        finally:
+            self._provider_lock.release()
+
+    def _process_batch_chunk(self, task_id: str, chunk: list[dict[str, str]], border: int) -> None:
+        provider_locked = self._acquire_provider_lock(task_id)
+        if not provider_locked:
+            return
+        try:
+            uploaded_items: list[dict[str, Any]] = []
+            local_map: dict[str, dict[str, str]] = {}
             for file_info in chunk:
-                current = self.get_task(task_id)
-                target = next((item for item in current.items if item.itemId == file_info["itemId"]), None)
-                if target and target.status not in {"done", "failed"}:
-                    self._mark_item_failed(task_id, file_info["itemId"], str(error))
+                if self._is_task_paused(task_id):
+                    self._pause_remaining_items(task_id)
+                    break
+                item_id = file_info["itemId"]
+                file_name = file_info["fileName"]
+                try:
+                    self._update_item(task_id, item_id, status="uploading", message="正在上传图片", log=f"上传图片: {file_name}")
+                    uploaded = self.client.upload_local_image(Path(file_info["path"]))
+                    uploaded_items.append({"image": uploaded["image_url"], "width": uploaded["width"], "height": uploaded["height"]})
+                    local_map[uploaded["image_url"]] = file_info
+                    self._update_item(task_id, item_id, status="submitted", message="已加入批量扣图任务")
+                    if uploaded["resized"]:
+                        self._append_log(task_id, f"图片超过 {self.settings.max_image_side} 像素，已自动缩小: {file_name}")
+                except Exception as error:
+                    self._mark_item_failed(task_id, item_id, str(error))
+            if not uploaded_items:
+                return
+            try:
+                parent_task_id = self.client.remove_bg_batch(uploaded_items, border=border)
+                self._append_log(task_id, f"批量任务已提交: {parent_task_id}")
+                items = self.client.poll_batch_task_result(parent_task_id, expected_count=len(uploaded_items))
+                for index, item in enumerate(items):
+                    image_url = item.get("image")
+                    file_info = local_map.get(image_url) or chunk[index]
+                    item_id = file_info["itemId"]
+                    result_url = item.get("result_url")
+                    if not result_url:
+                        self._mark_item_failed(task_id, item_id, "接口未返回结果地址")
+                        continue
+                    output_path = self._build_result_path(task_id, file_info["fileName"])
+                    self.client.download_file(result_url, output_path)
+                    self._mark_item_done(task_id, item_id, output_path, "处理完成")
+            except Exception as error:
+                for file_info in chunk:
+                    current = self.get_task(task_id)
+                    target = next((item for item in current.items if item.itemId == file_info["itemId"]), None)
+                    if target and target.status not in {"done", "failed"}:
+                        self._mark_item_failed(task_id, file_info["itemId"], str(error))
+        finally:
+            self._provider_lock.release()
 
     def _build_result_path(self, task_id: str, file_name: str) -> Path:
         result_dir = self.settings.result_dir / task_id
@@ -209,8 +230,12 @@ class TaskService:
 
     def _write_task(self, task_id: str, detail: dict[str, Any], files: list[dict[str, str]], results: dict[str, str] | None = None) -> None:
         payload = {"detail": detail, "files": files, "results": results or {}}
-        with open(self._task_file(task_id), "w", encoding="utf-8") as file:
-            json.dump(payload, file, ensure_ascii=False, indent=2)
+        task_file = self._task_file(task_id)
+        task_file.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, dir=task_file.parent, suffix=".tmp") as temp_file:
+            json.dump(payload, temp_file, ensure_ascii=False, indent=2)
+            temp_file_path = Path(temp_file.name)
+        temp_file_path.replace(task_file)
 
     def _update_task_status(self, task_id: str, status: TaskStatus, log: str | None = None) -> None:
         with self._lock:

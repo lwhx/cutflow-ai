@@ -1,18 +1,18 @@
 services:
-  backend:
+  cutflow-ai:
     build:
-      context: ./backend
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/lwhx/cutflow-ai:latest
     env_file:
       - .env
     volumes:
       - ./data:/app/data
-    expose:
-      - "8000"
-
-  frontend:
-    build:
-      context: ./frontend
-    depends_on:
-      - backend
     ports:
-      - "80:80"
+      - "80:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

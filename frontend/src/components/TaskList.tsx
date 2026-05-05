@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import type { TaskDetail, TaskItem, TaskItemStatus } from '../types/task';
+import type { TaskDetail, TaskItem, TaskItemRecord, TaskItemStatus } from '../types/task';
+
 import { getItemDownloadUrl, getZipDownloadUrl } from '../api/taskApi';
 import type { ImagePreview } from '../types/preview';
 import type { UploadFileItem } from '../types/upload';
@@ -9,7 +10,7 @@ interface TaskListProps {
   items: UploadFileItem[];
   previewUrls: Record<string, string>;
   disabled: boolean;
-  taskItemsByFileKey: Map<string, TaskItem>;
+  taskItemsByFileKey: Map<string, TaskItemRecord>;
   onRemoveFile: (index: number) => void;
   onPreview: (preview: ImagePreview) => void;
 }
@@ -57,7 +58,7 @@ export default function TaskList({ task, items, previewUrls, disabled, taskItems
   const cards = items.map((uploadItem, index) => ({
     uploadItem,
     originalUrl: previewUrls[uploadItem.fileKey] || '',
-    item: taskItemsByFileKey.get(uploadItem.fileKey) || getFallbackItem(uploadItem)
+    item: taskItemsByFileKey.get(uploadItem.fileKey)?.item || getFallbackItem(uploadItem)
   }));
 
   const handleCopy = async (item: TaskItem, resultUrl: string) => {
@@ -141,7 +142,9 @@ export default function TaskList({ task, items, previewUrls, disabled, taskItems
       )}
       <div className="compare-grid">
         {cards.map(({ uploadItem, originalUrl, item }, index) => {
-          const resultUrl = task && item.status === 'done' ? getItemDownloadUrl(task.taskId, item.itemId) : '';
+          const taskItemRecord = taskItemsByFileKey.get(uploadItem.fileKey);
+          const resultUrl = taskItemRecord && taskItemRecord.item.status === 'done' ? getItemDownloadUrl(taskItemRecord.taskId, taskItemRecord.item.itemId) : '';
+
           return (
             <article className="image-compare-card" key={uploadItem.fileKey}>
               <div className="compare-card-header">
