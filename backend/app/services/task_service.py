@@ -179,6 +179,33 @@ class TaskService:
             self._write_task(task_id, detail, data["files"], data.get("results", {}))
             return TaskDetail(**detail)
 
+    def retry_task_item(self, task_id: str, item_id: str, border: int = 2) -> TaskDetail:
+        with self._lock:
+            data = self._read_task_data(task_id)
+            detail = data["detail"]
+            target_item = next((item for item in detail["items"] if item["itemId"] == item_id), None)
+            file_info = next((item for item in data.get("files", []) if item["itemId"] == item_id), None)
+            if target_item is None or file_info is None:
+                raise TaskServiceError("任务图片不存在")
+            if target_item["status"] in {"uploading", "submitted", "processing"}:
+                raise TaskServiceError("图片正在处理中，请稍后再试")
+            original_path = Path(file_info["path"])
+            if not original_path.exists():
+                raise TaskServiceError("原图文件已清理，无法重新处理")
+            results = data.get("results", {})
+            results.pop(item_id, None)
+            target_item["status"] = "pending"
+            target_item["message"] = "等待重新处理"
+            target_item["downloadUrl"] = None
+            detail["status"] = "processing"
+            detail["logs"].append(f"重新处理图片: {target_item['fileName']}")
+            self._refresh_counts(detail)
+            self._write_task(task_id, detail, data["files"], results)
+            next_detail = TaskDetail(**detail)
+        thread = threading.Thread(target=self._retry_task_item, args=(task_id, file_info, border), daemon=True)
+        thread.start()
+        return next_detail
+
     def _task_has_active_items(self, detail: dict[str, Any]) -> bool:
         return any(item["status"] in {"uploading", "submitted", "processing"} for item in detail["items"])
 
@@ -232,26 +259,39 @@ class TaskService:
         if not provider_locked:
             return
         try:
-            item_id = file_info["itemId"]
-            file_name = file_info["fileName"]
-            local_path = Path(file_info["path"])
-            try:
-                self._update_item(task_id, item_id, status="uploading", message="正在上传图片", log=f"上传图片: {file_name}")
-                uploaded = self.client.upload_local_image(local_path)
-                if uploaded["resized"]:
-                    self._append_log(task_id, f"图片超过 {self.settings.max_image_side} 像素，已自动缩小: {file_name}")
-                self._update_item(task_id, item_id, status="submitted", message="扣图任务已提交")
-                remote_task_id = self.client.remove_bg_single(uploaded["image_url"], uploaded["width"], uploaded["height"], border=border)
-                self._append_log(task_id, f"扣图任务已提交: {remote_task_id}")
-                self._update_item(task_id, item_id, status="processing", message="正在等待扣图结果")
-                result = self.client.poll_single_task_result(remote_task_id)
-                output_path = self._build_result_path(task_id, file_name)
-                self.client.download_file(result["result_url"], output_path)
-                self._mark_item_done(task_id, item_id, output_path, "处理完成")
-            except Exception as error:
-                self._mark_item_failed(task_id, item_id, str(error))
+            self._run_single_item(task_id, file_info, border)
         finally:
             self._provider_lock.release()
+
+    def _retry_task_item(self, task_id: str, file_info: dict[str, str], border: int) -> None:
+        provider_locked = self._acquire_provider_lock(task_id)
+        if not provider_locked:
+            return
+        try:
+            self._run_single_item(task_id, file_info, border)
+            self._finalize_task(task_id)
+        finally:
+            self._provider_lock.release()
+
+    def _run_single_item(self, task_id: str, file_info: dict[str, str], border: int) -> None:
+        item_id = file_info["itemId"]
+        file_name = file_info["fileName"]
+        local_path = Path(file_info["path"])
+        try:
+            self._update_item(task_id, item_id, status="uploading", message="正在上传图片", log=f"上传图片: {file_name}")
+            uploaded = self.client.upload_local_image(local_path)
+            if uploaded["resized"]:
+                self._append_log(task_id, f"图片超过 {self.settings.max_image_side} 像素，已自动缩小: {file_name}")
+            self._update_item(task_id, item_id, status="submitted", message="扣图任务已提交")
+            remote_task_id = self.client.remove_bg_single(uploaded["image_url"], uploaded["width"], uploaded["height"], border=border)
+            self._append_log(task_id, f"扣图任务已提交: {remote_task_id}")
+            self._update_item(task_id, item_id, status="processing", message="正在等待扣图结果")
+            result = self.client.poll_single_task_result(remote_task_id)
+            output_path = self._build_result_path(task_id, file_name)
+            self.client.download_file(result["result_url"], output_path)
+            self._mark_item_done(task_id, item_id, output_path, "处理完成")
+        except Exception as error:
+            self._mark_item_failed(task_id, item_id, str(error))
 
     def _process_batch_chunk(self, task_id: str, chunk: list[dict[str, str]], border: int) -> None:
         provider_locked = self._acquire_provider_lock(task_id)

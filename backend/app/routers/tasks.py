@@ -57,6 +57,14 @@ def pause_task(task_id: str) -> TaskDetail:
         raise HTTPException(status_code=404, detail=str(error)) from error
 
 
+@router.post("/{task_id}/items/{item_id}/retry", response_model=TaskDetail)
+def retry_task_item(task_id: str, item_id: str, border: Annotated[int, Form()] = 2) -> TaskDetail:
+    try:
+        return task_service.retry_task_item(task_id, item_id, border)
+    except TaskServiceError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
 @router.delete("/{task_id}/items/{item_id}", response_model=DeleteTaskItemResponse)
 def delete_task_item(task_id: str, item_id: str) -> DeleteTaskItemResponse:
     try:

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AxiosError } from 'axios';
-import { clearTasks, createTask, deleteTaskItem, getTask, listTasks, pauseTask } from './api/taskApi';
+import { clearTasks, createTask, deleteTaskItem, getTask, listTasks, pauseTask, retryTaskItem } from './api/taskApi';
 import LogPanel from './components/LogPanel';
 import ModeSelector from './components/ModeSelector';
 import TaskList from './components/TaskList';
@@ -264,6 +264,22 @@ export default function App() {
     }
   };
 
+  const handleRetryItem = async (taskId: string, itemId: string) => {
+    setError('');
+    setRunning(true);
+    try {
+      const detail = await retryTaskItem(taskId, itemId, 2);
+      syncTaskState(detail);
+      startPolling(taskId);
+    } catch (requestError) {
+      const errorMessage = requestError instanceof AxiosError
+        ? requestError.response?.data?.detail || requestError.message
+        : '重新处理失败';
+      setError(String(errorMessage));
+      setRunning(false);
+    }
+  };
+
   useEffect(() => {
     const restoreTasks = async () => {
       try {
@@ -367,7 +383,7 @@ export default function App() {
             <UploadPanel items={items} onClear={handleClearFiles} onItemsChange={handleItemsChange} />
           </aside>
           <section className="right-column" aria-label="处理结果">
-            <TaskList disabled={running} items={displayItems} onPreview={setPreview} onRemoveFile={handleRemoveFile} previewUrls={filePreviews} task={task} taskItemsByFileKey={taskItemsByFileKey} />
+            <TaskList disabled={running} items={displayItems} onPreview={setPreview} onRemoveFile={handleRemoveFile} onRetryItem={handleRetryItem} previewUrls={filePreviews} task={task} taskItemsByFileKey={taskItemsByFileKey} />
 
             <LogPanel logs={task?.logs || []} />
           </section>

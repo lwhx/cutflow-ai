@@ -297,7 +297,7 @@ class TudingAIClient:
         raise TudingAIError(f"批量任务超时: {parent_task_id}")
 
     @staticmethod
-    def download_file(url: str, save_path: Path, retry_attempts: int = 5, retry_interval_seconds: float = 5.0) -> None:
+    def download_file(url: str, save_path: Path, retry_attempts: int = 8, retry_interval_seconds: float = 5.0) -> None:
         last_error: Exception | None = None
         for attempt in range(retry_attempts):
             response: requests.Response | None = None
@@ -320,5 +320,5 @@ class TudingAIClient:
                 if response is not None:
                     response.close()
         if last_error is not None:
-            raise last_error
-        raise TudingAIError(f"下载结果失败: {url}")
+            raise TudingAIError("扣图结果已生成，但 CDN 下载暂时超时，请稍后重新处理该图片") from last_error
+        raise TudingAIError("扣图结果下载失败，请稍后重新处理该图片")

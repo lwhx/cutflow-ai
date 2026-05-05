@@ -43,6 +43,13 @@ export async function pauseTask(taskId: string): Promise<TaskDetail> {
   return response.data;
 }
 
+export async function retryTaskItem(taskId: string, itemId: string, border = 2): Promise<TaskDetail> {
+  const formData = new FormData();
+  formData.append('border', String(border));
+  const response = await api.post<TaskDetail>(`/api/tasks/${taskId}/items/${itemId}/retry`, formData);
+  return response.data;
+}
+
 export function getItemDownloadUrl(taskId: string, itemId: string): string {
   return `/api/tasks/${taskId}/items/${itemId}/download`;
 }

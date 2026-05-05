@@ -13,6 +13,7 @@ interface TaskListProps {
   taskItemsByFileKey: Map<string, TaskItemRecord>;
   onRemoveFile: (index: number) => void;
   onPreview: (preview: ImagePreview) => void;
+  onRetryItem: (taskId: string, itemId: string) => void;
 }
 
 const statusText: Record<TaskItemStatus, string> = {
@@ -56,7 +57,7 @@ async function copyResultImage(url: string): Promise<'image' | 'link'> {
   return 'link';
 }
 
-export default function TaskList({ task, items, previewUrls, disabled, taskItemsByFileKey, onRemoveFile, onPreview }: TaskListProps) {
+export default function TaskList({ task, items, previewUrls, disabled, taskItemsByFileKey, onRemoveFile, onPreview, onRetryItem }: TaskListProps) {
   const [copyTips, setCopyTips] = useState<Record<string, string>>({});
   const copyTimerRef = useRef<number | null>(null);
   const cards = items.map((uploadItem) => {
@@ -206,9 +207,15 @@ export default function TaskList({ task, items, previewUrls, disabled, taskItems
                 </div>
               </div>
               <div className="result-actions">
-                <button disabled={!resultUrl} onClick={() => resultUrl && handleCopy(item, resultUrl)} type="button">
-                  {copyTips[item.itemId] || '复制结果'}
-                </button>
+                {item.status === 'failed' && taskItemRecord ? (
+                  <button disabled={disabled} onClick={() => onRetryItem(taskItemRecord.taskId, item.itemId)} type="button">
+                    重新处理
+                  </button>
+                ) : (
+                  <button disabled={!resultUrl} onClick={() => resultUrl && handleCopy(item, resultUrl)} type="button">
+                    {copyTips[item.itemId] || '复制结果'}
+                  </button>
+                )}
                 <a className={!resultUrl ? 'disabled-link secondary-link-button' : 'secondary-link-button'} download href={resultUrl || undefined}>
                   下载 PNG
                 </a>
