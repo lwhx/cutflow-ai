@@ -3,6 +3,7 @@ import shutil
 import tempfile
 import threading
 import uuid
+from concurrent.futures import as_completed
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -298,24 +299,38 @@ class TaskService:
         if not provider_locked:
             return
         try:
-            uploaded_items: list[dict[str, Any]] = []
-            local_map: dict[str, dict[str, str]] = {}
+            # 第一步：并行上传所有图片（关键优化）
+            futures = {}
             for file_info in chunk:
                 if self._is_task_paused(task_id):
                     self._pause_remaining_items(task_id)
                     break
                 item_id = file_info["itemId"]
-                file_name = file_info["fileName"]
+                self._update_item(task_id, item_id, status="uploading", message="正在上传图片", log=f"上传图片: {file_info['fileName']}")
+                future = self.client.upload_local_image_async(Path(file_info["path"]))
+                futures[future] = (item_id, file_info)
+
+            # 收集上传结果
+            uploaded_items: list[dict[str, Any]] = []
+            local_map: dict[str, dict[str, str]] = {}
+            failed_items: list[tuple[str, str]] = []
+
+            for future in as_completed(futures):
+                item_id, file_info = futures[future]
                 try:
-                    self._update_item(task_id, item_id, status="uploading", message="正在上传图片", log=f"上传图片: {file_name}")
-                    uploaded = self.client.upload_local_image(Path(file_info["path"]))
+                    uploaded = future.result()
                     uploaded_items.append({"image": uploaded["image_url"], "width": uploaded["width"], "height": uploaded["height"]})
                     local_map[uploaded["image_url"]] = file_info
                     self._update_item(task_id, item_id, status="submitted", message="已加入批量扣图任务")
                     if uploaded["resized"]:
-                        self._append_log(task_id, f"图片超过 {self.settings.max_image_side} 像素，已自动缩小: {file_name}")
+                        self._append_log(task_id, f"图片超过 {self.settings.max_image_side} 像素，已自动缩小: {file_info['fileName']}")
                 except Exception as error:
-                    self._mark_item_failed(task_id, item_id, str(error))
+                    failed_items.append((item_id, str(error)))
+
+            # 标记上传失败的项
+            for item_id, error_msg in failed_items:
+                self._mark_item_failed(task_id, item_id, error_msg)
+
             if not uploaded_items:
                 return
             try:

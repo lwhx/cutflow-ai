@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     data_dir: Path = Field(default=Path("data"), alias="DATA_DIR")
     max_batch_size: int = Field(default=5, alias="MAX_BATCH_SIZE")
     max_image_side: int = Field(default=6000, alias="MAX_IMAGE_SIDE")
+    max_concurrent_uploads: int = Field(default=4, alias="MAX_CONCURRENT_UPLOADS")
     task_expire_hours: int = Field(default=1, alias="TASK_EXPIRE_HOURS")
     cors_origins: str = Field(default="*", alias="CORS_ORIGINS")
 

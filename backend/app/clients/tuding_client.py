@@ -3,6 +3,7 @@ import os
 import tempfile
 import time
 import uuid
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,18 @@ from PIL import Image
 
 from app.core.config import Settings
 from app.core.constants import API_BASE, COMMON_HEADERS
+
+
+# 全局共享 session，用于连接复用
+_global_session: requests.Session | None = None
+
+
+def get_shared_session() -> requests.Session:
+    global _global_session
+    if _global_session is None:
+        _global_session = requests.Session()
+        _global_session.headers.update(COMMON_HEADERS)
+    return _global_session
 
 
 class TudingAIError(Exception):
@@ -23,8 +36,8 @@ class TudingAIClient:
         self.account = settings.tuding_account
         self.password = settings.tuding_password
         self.cookie_file = settings.cookie_file
-        self.session = requests.Session()
-        self.session.headers.update(COMMON_HEADERS)
+        self.session = get_shared_session()
+        self._upload_executor = ThreadPoolExecutor(max_workers=settings.max_concurrent_uploads)
 
     def save_cookies(self) -> None:
         self.cookie_file.parent.mkdir(parents=True, exist_ok=True)
@@ -133,7 +146,8 @@ class TudingAIClient:
                     "signature": signature,
                     "success_action_status": "200",
                 }
-                response = requests.post(host, data=data, files=files, timeout=60)
+                # 使用共享 session，启用 HTTP keep-alive
+                response = self.session.post(host, data=data, files=files, timeout=60)
                 response.raise_for_status()
         finally:
             if upload_path != local_path:
@@ -153,6 +167,9 @@ class TudingAIClient:
             "original_height": original_size[1],
             "resized": original_size != resized_size,
         }
+
+    def upload_local_image_async(self, local_path: Path, subdir: str = "ai_model") -> Future[dict[str, Any]]:
+        return self._upload_executor.submit(self.upload_local_image, local_path, subdir)
 
     def _prepare_upload_image(self, local_path: Path) -> tuple[Path, tuple[int, int], tuple[int, int]]:
         with Image.open(local_path) as image:
