@@ -9,7 +9,7 @@ from fastapi import UploadFile
 
 from app.clients.tuding_client import TudingAIClient, TudingAIError
 from app.core.config import Settings
-from app.schemas.task import TaskDetail, TaskItem, TaskMode
+from app.schemas.task import TaskDetail, TaskItem, TaskMode, TaskStatus
 from app.services.image_service import ImageService
 
 
@@ -72,16 +72,61 @@ class TaskService:
         paths = [Path(path) for path in data.get("results", {}).values()]
         return [path for path in paths if path.exists()]
 
+    def pause_task(self, task_id: str) -> TaskDetail:
+        with self._lock:
+            data = self._read_task_data(task_id)
+            detail = data["detail"]
+            if detail["status"] not in {"pending", "processing"}:
+                return TaskDetail(**detail)
+            detail["status"] = "paused"
+            for item in detail["items"]:
+                if item["status"] in {"pending", "submitted"}:
+                    item["status"] = "paused"
+                    item["message"] = "已暂停，等待下次处理"
+            detail["logs"].append("已请求暂停，正在上传或扣图中的图片会继续完成")
+            self._refresh_counts(detail)
+            self._write_task(task_id, detail, data["files"], data.get("results", {}))
+            return TaskDetail(**detail)
+
+    def _task_has_active_items(self, detail: dict[str, Any]) -> bool:
+        return any(item["status"] in {"uploading", "submitted", "processing"} for item in detail["items"])
+
+    def _is_task_paused(self, task_id: str) -> bool:
+        data = self._read_task_data(task_id)
+        detail = data["detail"]
+        return detail["status"] == "paused" and not self._task_has_active_items(detail)
+
+    def _pause_remaining_items(self, task_id: str) -> None:
+        with self._lock:
+            data = self._read_task_data(task_id)
+            detail = data["detail"]
+            for item in detail["items"]:
+                if item["status"] in {"pending", "submitted"}:
+                    item["status"] = "paused"
+                    item["message"] = "已暂停，等待下次处理"
+            detail["status"] = "paused"
+            self._refresh_counts(detail)
+            self._write_task(task_id, detail, data["files"], data.get("results", {}))
+
     def _process_task(self, task_id: str, saved_files: list[dict[str, str]], mode: TaskMode, border: int) -> None:
-        self._update_task(task_id, status="processing", log="开始处理任务")
+        self._update_task_status(task_id, "processing", log="开始处理任务")
         if mode == "batch":
             chunks = [saved_files[index:index + self.settings.max_batch_size] for index in range(0, len(saved_files), self.settings.max_batch_size)]
             for chunk_index, chunk in enumerate(chunks, start=1):
+                if self._is_task_paused(task_id):
+                    self._pause_remaining_items(task_id)
+                    return
                 self._append_log(task_id, f"开始处理第 {chunk_index}/{len(chunks)} 批，每批最多 {self.settings.max_batch_size} 张")
                 self._process_batch_chunk(task_id, chunk, border)
         else:
             for file_info in saved_files:
+                if self._is_task_paused(task_id):
+                    self._pause_remaining_items(task_id)
+                    return
                 self._process_single_item(task_id, file_info, border)
+        if self._is_task_paused(task_id):
+            self._pause_remaining_items(task_id)
+            return
         self._finalize_task(task_id)
 
     def _process_single_item(self, task_id: str, file_info: dict[str, str], border: int) -> None:
@@ -108,6 +153,9 @@ class TaskService:
         uploaded_items: list[dict[str, Any]] = []
         local_map: dict[str, dict[str, str]] = {}
         for file_info in chunk:
+            if self._is_task_paused(task_id):
+                self._pause_remaining_items(task_id)
+                break
             item_id = file_info["itemId"]
             file_name = file_info["fileName"]
             try:
@@ -163,6 +211,16 @@ class TaskService:
         payload = {"detail": detail, "files": files, "results": results or {}}
         with open(self._task_file(task_id), "w", encoding="utf-8") as file:
             json.dump(payload, file, ensure_ascii=False, indent=2)
+
+    def _update_task_status(self, task_id: str, status: TaskStatus, log: str | None = None) -> None:
+        with self._lock:
+            data = self._read_task_data(task_id)
+            detail = data["detail"]
+            detail["status"] = status
+            if log:
+                detail["logs"].append(log)
+            self._refresh_counts(detail)
+            self._write_task(task_id, detail, data["files"], data.get("results", {}))
 
     def _update_task(self, task_id: str, *, status: str | None = None, log: str | None = None) -> None:
         with self._lock:

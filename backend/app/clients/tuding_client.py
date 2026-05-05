@@ -169,34 +169,45 @@ class TudingAIClient:
             image_for_save.save(temp_path)
             return temp_path, original_size, resized_size
 
+    def _is_remove_bg_busy_error(self, error: TudingAIError) -> bool:
+        return "您有任务正在执行中，请稍后再提交" in str(error)
+
+    def _wait_for_remove_bg_slot(self, interval_seconds: float = 5.0, max_attempts: int = 6) -> None:
+        for _ in range(max_attempts):
+            time.sleep(interval_seconds)
+
+    def _submit_remove_bg(self, images: list[dict[str, Any]], border: int, retry_attempts: int = 6, retry_interval_seconds: float = 5.0) -> dict[str, Any]:
+        payload = {
+            "imageList": [
+                {"image": item["image"], "width": item["width"], "height": item["height"]}
+                for item in images
+            ],
+            "batchSize": len(images),
+            "border": border,
+        }
+        last_error: TudingAIError | None = None
+        for attempt in range(retry_attempts):
+            try:
+                return self.api_request("POST", "/ps/plugin/removeBg", json_body=payload)
+            except TudingAIError as error:
+                if not self._is_remove_bg_busy_error(error):
+                    raise
+                last_error = error
+                if attempt < retry_attempts - 1:
+                    time.sleep(retry_interval_seconds)
+        if last_error is not None:
+            raise last_error
+        raise TudingAIError("removeBg 提交失败")
+
     def remove_bg_single(self, image_url: str, width: int, height: int, border: int = 2) -> str:
-        data = self.api_request(
-            "POST",
-            "/ps/plugin/removeBg",
-            json_body={
-                "imageList": [{"image": image_url, "width": width, "height": height}],
-                "batchSize": 1,
-                "border": border,
-            },
-        )
+        data = self._submit_remove_bg([{"image": image_url, "width": width, "height": height}], border=border)
         task_id = data.get("data")
         if not task_id:
             raise TudingAIError(f"removeBg 返回异常: {data}")
         return task_id
 
     def remove_bg_batch(self, images: list[dict[str, Any]], border: int = 2) -> str:
-        data = self.api_request(
-            "POST",
-            "/ps/plugin/removeBg",
-            json_body={
-                "imageList": [
-                    {"image": item["image"], "width": item["width"], "height": item["height"]}
-                    for item in images
-                ],
-                "batchSize": len(images),
-                "border": border,
-            },
-        )
+        data = self._submit_remove_bg(images, border=border)
         task_id = data.get("data")
         if not task_id:
             raise TudingAIError(f"批量 removeBg 返回异常: {data}")
@@ -235,6 +246,7 @@ class TudingAIClient:
                     "raw": detail,
                 }
             time.sleep(interval_seconds)
+        self._wait_for_remove_bg_slot()
         raise TudingAIError(f"单图任务超时: {task_id}")
 
     def flatten_batch_task(self, detail: dict[str, Any]) -> list[dict[str, Any]]:
@@ -269,8 +281,10 @@ class TudingAIClient:
                 if item.get("task_status") == 1 and item.get("result_status") == 1 and item.get("result_url")
             ]
             if len(completed) >= expected_count:
+                self._wait_for_remove_bg_slot()
                 return completed[:expected_count]
             time.sleep(interval_seconds)
+        self._wait_for_remove_bg_slot()
         raise TudingAIError(f"批量任务超时: {parent_task_id}")
 
     @staticmethod

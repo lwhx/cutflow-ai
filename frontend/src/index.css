@@ -217,6 +217,21 @@ p {
   width: 100%;
 }
 
+.hero-action-buttons {
+  display: grid;
+  gap: 12px;
+}
+
+.pause-button {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  box-shadow: 0 18px 38px rgba(217, 119, 6, 0.28);
+  color: #fff;
+}
+
+.pause-button:hover:not(:disabled) {
+  box-shadow: 0 22px 48px rgba(217, 119, 6, 0.34);
+}
+
 .error-alert {
   background: rgba(127, 29, 29, 0.86);
   border: 1px solid rgba(248, 113, 113, 0.35);
@@ -578,6 +593,12 @@ p {
   color: #b91c1c;
 }
 
+.status-badge.paused,
+.item-status.paused {
+  background: #fef3c7;
+  color: #b45309;
+}
+
 .progress-bar {
   background: #dbe3ef;
   border-radius: 999px;
@@ -901,6 +922,11 @@ button.image-tile,
 .result-placeholder.failed strong,
 .result-placeholder.failed p {
   color: #b91c1c;
+}
+
+.result-placeholder.paused strong,
+.result-placeholder.paused p {
+  color: #b45309;
 }
 
 .result-actions {

@@ -1,25 +1,86 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AxiosError } from 'axios';
-import { createTask, getTask } from './api/taskApi';
+import { createTask, getTask, pauseTask } from './api/taskApi';
 import LogPanel from './components/LogPanel';
 import ModeSelector from './components/ModeSelector';
 import TaskList from './components/TaskList';
 import UploadPanel from './components/UploadPanel';
 import { useObjectUrls } from './hooks/useObjectUrls';
 import type { ImagePreview } from './types/preview';
-import type { TaskDetail, TaskMode } from './types/task';
+import type { TaskDetail, TaskItem, TaskItemStatus, TaskMode } from './types/task';
 import { createUploadFileItem, extractImageFilesFromClipboardData, type UploadFileItem } from './types/upload';
 
 export default function App() {
   const [mode, setMode] = useState<TaskMode>('single');
   const [items, setItems] = useState<UploadFileItem[]>([]);
   const [task, setTask] = useState<TaskDetail | null>(null);
+  const [processedTasks, setProcessedTasks] = useState<TaskDetail[]>([]);
+  const [processingFileKeys, setProcessingFileKeys] = useState<Set<string>>(new Set());
   const [error, setError] = useState('');
   const [running, setRunning] = useState(false);
   const [preview, setPreview] = useState<ImagePreview | null>(null);
   const timerRef = useRef<number | null>(null);
 
-  const filePreviews = useObjectUrls(items.map((item) => item.file));
+  const filePreviews = useObjectUrls(items);
+
+  const taskItemsByFileKey = useMemo(() => {
+    const map = new Map<string, TaskItem>();
+    processedTasks.forEach((detail) => {
+      detail.items.forEach((item) => {
+        map.set(item.fileKey, item);
+      });
+    });
+    if (task) {
+      task.items.forEach((item) => {
+        map.set(item.fileKey, item);
+      });
+    }
+    return map;
+  }, [processedTasks, task]);
+
+  const activeTaskItemStatuses: TaskItemStatus[] = ['uploading', 'submitted', 'processing'];
+
+  const isActiveTaskItemStatus = (status: TaskItemStatus) => activeTaskItemStatuses.includes(status);
+
+  const hasActiveTaskItems = (detail: TaskDetail) => detail.items.some((item) => isActiveTaskItemStatus(item.status));
+
+  const shouldKeepPollingTask = (detail: TaskDetail) => detail.status === 'pending' || detail.status === 'processing' || (detail.status === 'paused' && hasActiveTaskItems(detail));
+
+  const syncTaskState = (detail: TaskDetail) => {
+    setTask(detail);
+    setProcessedTasks((tasks) => {
+      const nextTasks = tasks.filter((item) => item.taskId !== detail.taskId);
+      return [...nextTasks, detail];
+    });
+    setProcessingFileKeys((keys) => {
+      const nextKeys = new Set(keys);
+      detail.items.forEach((item) => {
+        if (item.status === 'done' || item.status === 'failed') {
+          nextKeys.delete(item.fileKey);
+        }
+      });
+      return nextKeys;
+    });
+  };
+
+  const finishRunningTask = () => {
+    setRunning(false);
+    setProcessingFileKeys(new Set());
+    stopPolling();
+  };
+
+  const getRunnableItems = () => {
+    const handledFileKeys = new Set<string>();
+    processedTasks.forEach((detail) => {
+      detail.items.forEach((item) => {
+        if (item.status !== 'paused') {
+          handledFileKeys.add(item.fileKey);
+        }
+      });
+    });
+    processingFileKeys.forEach((fileKey) => handledFileKeys.add(fileKey));
+    return items.filter((item) => !handledFileKeys.has(item.fileKey));
+  };
 
   const stopPolling = () => {
     if (timerRef.current) {
@@ -32,17 +93,16 @@ export default function App() {
     stopPolling();
     timerRef.current = window.setInterval(async () => {
       const detail = await getTask(taskId);
-      setTask(detail);
-      if (detail.status === 'done' || detail.status === 'failed') {
-        setRunning(false);
-        stopPolling();
+      syncTaskState(detail);
+      if (shouldKeepPollingTask(detail)) {
+        return;
       }
+      finishRunningTask();
     }, 1500);
   };
 
   const handleItemsChange = (nextItems: UploadFileItem[]) => {
     setItems(nextItems);
-    setTask(null);
     setError('');
   };
 
@@ -54,7 +114,8 @@ export default function App() {
   };
 
   const handleRemoveFile = (index: number) => {
-    if (running) {
+    const target = items[index];
+    if (target && processingFileKeys.has(target.fileKey)) {
       return;
     }
     handleItemsChange(items.filter((_, itemIndex) => itemIndex !== index));
@@ -62,22 +123,28 @@ export default function App() {
 
   const handleClearFiles = () => {
     if (running) {
+      setItems(items.filter((item) => processingFileKeys.has(item.fileKey)));
       return;
     }
     handleItemsChange([]);
+    setTask(null);
+    setProcessedTasks([]);
+    setProcessingFileKeys(new Set());
   };
 
   const handleStart = async () => {
-    if (items.length === 0) {
-      setError('请先选择图片');
+    const runnableItems = getRunnableItems();
+    if (runnableItems.length === 0) {
+      setError(items.length === 0 ? '请先选择图片' : '当前没有需要处理的新图片');
       return;
     }
     setError('');
     setRunning(true);
+    setProcessingFileKeys(new Set(runnableItems.map((item) => item.fileKey)));
     try {
-      const created = await createTask(items, mode, 2);
+      const created = await createTask(runnableItems, mode, 2);
       const detail = await getTask(created.taskId);
-      setTask(detail);
+      syncTaskState(detail);
       startPolling(created.taskId);
     } catch (requestError) {
       const errorMessage = requestError instanceof AxiosError
@@ -85,6 +152,26 @@ export default function App() {
         : '创建任务失败';
       setError(String(errorMessage));
       setRunning(false);
+      setProcessingFileKeys(new Set());
+    }
+  };
+
+  const handlePause = async () => {
+    if (!task || !running) {
+      return;
+    }
+    try {
+      const detail = await pauseTask(task.taskId);
+      syncTaskState(detail);
+      if (shouldKeepPollingTask(detail)) {
+        return;
+      }
+      finishRunningTask();
+    } catch (requestError) {
+      const errorMessage = requestError instanceof AxiosError
+        ? requestError.response?.data?.detail || requestError.message
+        : '暂停任务失败';
+      setError(String(errorMessage));
     }
   };
 
@@ -92,9 +179,6 @@ export default function App() {
 
   useEffect(() => {
     const handlePaste = (event: ClipboardEvent) => {
-      if (running) {
-        return;
-      }
       if (!event.clipboardData) {
         return;
       }
@@ -106,7 +190,7 @@ export default function App() {
     };
     window.addEventListener('paste', handlePaste);
     return () => window.removeEventListener('paste', handlePaste);
-  }, [items, running]);
+  }, [items]);
 
   useEffect(() => {
     if (!preview) {
@@ -136,19 +220,24 @@ export default function App() {
         </div>
         <div className="hero-actions">
           <span>{items.length > 0 ? `已准备 ${items.length} 张图片` : '等待上传图片'}</span>
-          <button disabled={running || items.length === 0} onClick={handleStart} type="button">
-            {running ? '正在处理...' : '开始智能扣图'}
-          </button>
+          <div className="hero-action-buttons">
+            <button disabled={running || getRunnableItems().length === 0} onClick={handleStart} type="button">
+              {running ? '正在处理...' : '开始智能扣图'}
+            </button>
+            <button className="pause-button" disabled={!running || !task} onClick={handlePause} type="button">
+              暂停
+            </button>
+          </div>
         </div>
       </header>
       {error && <div className="error-alert">{error}</div>}
       <div className="grid">
         <aside className="left-column">
           <ModeSelector mode={mode} onChange={setMode} />
-          <UploadPanel disabled={running} items={items} onClear={handleClearFiles} onItemsChange={handleItemsChange} />
+          <UploadPanel items={items} onClear={handleClearFiles} onItemsChange={handleItemsChange} />
         </aside>
         <section className="right-column" aria-label="处理结果">
-          <TaskList disabled={running} items={items} onPreview={setPreview} onRemoveFile={handleRemoveFile} previewUrls={filePreviews} task={task} />
+          <TaskList disabled={running} items={items} onPreview={setPreview} onRemoveFile={handleRemoveFile} previewUrls={filePreviews} task={task} taskItemsByFileKey={taskItemsByFileKey} />
           <LogPanel logs={task?.logs || []} />
         </section>
       </div>

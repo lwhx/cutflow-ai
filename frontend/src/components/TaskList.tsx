@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { TaskDetail, TaskItem, TaskItemStatus } from '../types/task';
 import { getItemDownloadUrl, getZipDownloadUrl } from '../api/taskApi';
 import type { ImagePreview } from '../types/preview';
@@ -7,8 +7,9 @@ import type { UploadFileItem } from '../types/upload';
 interface TaskListProps {
   task: TaskDetail | null;
   items: UploadFileItem[];
-  previewUrls: string[];
+  previewUrls: Record<string, string>;
   disabled: boolean;
+  taskItemsByFileKey: Map<string, TaskItem>;
   onRemoveFile: (index: number) => void;
   onPreview: (preview: ImagePreview) => void;
 }
@@ -18,6 +19,7 @@ const statusText: Record<TaskItemStatus, string> = {
   uploading: '上传中',
   submitted: '已提交',
   processing: '扣图中',
+  paused: '已暂停',
   done: '已完成',
   failed: '处理失败'
 };
@@ -32,7 +34,7 @@ function getFallbackItem(item: UploadFileItem): TaskItem {
     fileKey: item.fileKey,
     fileName: item.file.name,
     status: 'pending',
-    message: '等待开始处理',
+    message: '等待下次处理',
     downloadUrl: null
   };
 }
@@ -49,14 +51,13 @@ async function copyResultImage(url: string): Promise<'image' | 'link'> {
   return 'link';
 }
 
-export default function TaskList({ task, items, previewUrls, disabled, onRemoveFile, onPreview }: TaskListProps) {
+export default function TaskList({ task, items, previewUrls, disabled, taskItemsByFileKey, onRemoveFile, onPreview }: TaskListProps) {
   const [copyTips, setCopyTips] = useState<Record<string, string>>({});
   const copyTimerRef = useRef<number | null>(null);
-  const taskItemMap = useMemo(() => new Map(task?.items.map((item) => [item.fileKey, item]) || []), [task]);
   const cards = items.map((uploadItem, index) => ({
     uploadItem,
-    originalUrl: previewUrls[index],
-    item: taskItemMap.get(uploadItem.fileKey) || getFallbackItem(uploadItem)
+    originalUrl: previewUrls[uploadItem.fileKey] || '',
+    item: taskItemsByFileKey.get(uploadItem.fileKey) || getFallbackItem(uploadItem)
   }));
 
   const handleCopy = async (item: TaskItem, resultUrl: string) => {
@@ -150,17 +151,25 @@ export default function TaskList({ task, items, previewUrls, disabled, onRemoveF
                 </div>
                 <div className="compare-card-tools">
                   <span className={`item-status ${item.status}`}>{statusText[item.status]}</span>
-                  <button className="danger-button" disabled={disabled} onClick={() => onRemoveFile(index)} type="button">移除</button>
+                  <button className="danger-button" disabled={disabled && item.status !== 'pending' && item.status !== 'paused'} onClick={() => onRemoveFile(index)} type="button">移除</button>
                 </div>
               </div>
               <div className="compare-pair">
                 <button
                   className="image-tile checkerboard-bg"
-                  onClick={() => onPreview({ src: originalUrl, title: uploadItem.file.name, kind: '原图' })}
+                  disabled={!originalUrl}
+                  onClick={() => originalUrl && onPreview({ src: originalUrl, title: uploadItem.file.name, kind: '原图' })}
                   type="button"
                 >
                   <span>原图</span>
-                  <img alt={`${uploadItem.file.name} 原图`} src={originalUrl} />
+                  {originalUrl ? (
+                    <img alt={`${uploadItem.file.name} 原图`} src={originalUrl} />
+                  ) : (
+                    <div className="result-placeholder pending">
+                      <strong>正在生成预览</strong>
+                      <p>请稍候</p>
+                    </div>
+                  )}
                 </button>
                 <div className="image-tile checkerboard-bg result-tile">
                   <span>扣图结果</span>

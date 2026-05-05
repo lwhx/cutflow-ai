@@ -2,8 +2,8 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-TaskStatus = Literal["pending", "processing", "done", "failed"]
-TaskItemStatus = Literal["pending", "uploading", "submitted", "processing", "done", "failed"]
+TaskStatus = Literal["pending", "processing", "paused", "done", "failed"]
+TaskItemStatus = Literal["pending", "uploading", "submitted", "processing", "paused", "done", "failed"]
 TaskMode = Literal["single", "batch"]
 
 

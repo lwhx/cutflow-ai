@@ -1,5 +1,5 @@
-export type TaskStatus = 'pending' | 'processing' | 'done' | 'failed';
-export type TaskItemStatus = 'pending' | 'uploading' | 'submitted' | 'processing' | 'done' | 'failed';
+export type TaskStatus = 'pending' | 'processing' | 'paused' | 'done' | 'failed';
+export type TaskItemStatus = 'pending' | 'uploading' | 'submitted' | 'processing' | 'paused' | 'done' | 'failed';
 export type TaskMode = 'single' | 'batch';
 
 export interface TaskItem {

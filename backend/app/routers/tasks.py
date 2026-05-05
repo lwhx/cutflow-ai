@@ -38,6 +38,14 @@ def get_task(task_id: str) -> TaskDetail:
         raise HTTPException(status_code=404, detail=str(error)) from error
 
 
+@router.post("/{task_id}/pause", response_model=TaskDetail)
+def pause_task(task_id: str) -> TaskDetail:
+    try:
+        return task_service.pause_task(task_id)
+    except TaskServiceError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
 @router.get("/{task_id}/items/{item_id}/download")
 def download_item(task_id: str, item_id: str) -> FileResponse:
     try:

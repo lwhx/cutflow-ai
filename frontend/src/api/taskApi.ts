@@ -23,6 +23,11 @@ export async function getTask(taskId: string): Promise<TaskDetail> {
   return response.data;
 }
 
+export async function pauseTask(taskId: string): Promise<TaskDetail> {
+  const response = await api.post<TaskDetail>(`/api/tasks/${taskId}/pause`);
+  return response.data;
+}
+
 export function getItemDownloadUrl(taskId: string, itemId: string): string {
   return `/api/tasks/${taskId}/items/${itemId}/download`;
 }

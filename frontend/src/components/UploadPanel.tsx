@@ -8,7 +8,6 @@ interface UploadPanelProps {
   items: UploadFileItem[];
   onItemsChange: (items: UploadFileItem[]) => void;
   onClear: () => void;
-  disabled: boolean;
 }
 
 function FileInfo({ name, size }: { name: string; size: number }): ReactNode {
@@ -20,7 +19,7 @@ function FileInfo({ name, size }: { name: string; size: number }): ReactNode {
   );
 }
 
-export default function UploadPanel({ items, onItemsChange, onClear, disabled }: UploadPanelProps) {
+export default function UploadPanel({ items, onItemsChange, onClear }: UploadPanelProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const totalSize = useMemo(() => items.reduce((sum, item) => sum + item.file.size, 0), [items]);
@@ -38,16 +37,10 @@ export default function UploadPanel({ items, onItemsChange, onClear, disabled }:
 
   const handleDrop = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
-    if (disabled) {
-      return;
-    }
     appendFiles(Array.from(event.dataTransfer.files));
   };
 
   const handlePaste = (event: ClipboardEvent<HTMLDivElement>) => {
-    if (disabled) {
-      return;
-    }
     const pastedImages = extractImageFilesFromClipboardData(event.clipboardData);
     if (pastedImages.length > 0) {
       event.preventDefault();
@@ -65,18 +58,18 @@ export default function UploadPanel({ items, onItemsChange, onClear, disabled }:
         <span className="mini-badge">PNG / JPG / WEBP</span>
       </div>
       <div
-        className={`drop-zone ${disabled ? 'disabled' : ''}`}
-        onClick={() => !disabled && fileInputRef.current?.click()}
+        className="drop-zone"
+        onClick={() => fileInputRef.current?.click()}
         onDragOver={(event) => event.preventDefault()}
         onDrop={handleDrop}
         onPaste={handlePaste}
         onKeyDown={(event) => {
-          if (!disabled && (event.key === 'Enter' || event.key === ' ')) {
+          if (event.key === 'Enter' || event.key === ' ') {
             fileInputRef.current?.click();
           }
         }}
         role="button"
-        tabIndex={disabled ? -1 : 0}
+        tabIndex={0}
       >
         <div className="upload-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" focusable="false">
@@ -105,7 +98,7 @@ export default function UploadPanel({ items, onItemsChange, onClear, disabled }:
         <span>已选择 {items.length} 张图片</span>
         <div className="file-summary-actions">
           <span>{(totalSize / 1024 / 1024).toFixed(2)} MB</span>
-          <button className="danger-button" disabled={disabled || items.length === 0} onClick={onClear} type="button">清空列表</button>
+          <button className="danger-button" disabled={items.length === 0} onClick={onClear} type="button">清空列表</button>
         </div>
       </div>
       {items.length > 0 && (

@@ -1,15 +1,19 @@
 import { useEffect, useState } from 'react';
+import type { UploadFileItem } from '../types/upload';
 
-export function useObjectUrls(files: File[]): string[] {
-  const [urls, setUrls] = useState<string[]>([]);
+export function useObjectUrls(items: UploadFileItem[]): Record<string, string> {
+  const [urls, setUrls] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    const nextUrls = files.map((file) => URL.createObjectURL(file));
+    const nextUrls = items.reduce<Record<string, string>>((urlMap, item) => {
+      urlMap[item.fileKey] = URL.createObjectURL(item.file);
+      return urlMap;
+    }, {});
     setUrls(nextUrls);
     return () => {
-      nextUrls.forEach((url) => URL.revokeObjectURL(url));
+      Object.values(nextUrls).forEach((url) => URL.revokeObjectURL(url));
     };
-  }, [files]);
+  }, [items]);
 
   return urls;
 }
