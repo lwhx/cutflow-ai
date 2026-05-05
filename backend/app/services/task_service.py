@@ -101,6 +101,30 @@ class TaskService:
                     deleted_files += deleted_count
             return {"deletedTasks": deleted_tasks, "deletedFiles": deleted_files}
 
+    def delete_task_item(self, task_id: str, item_id: str) -> dict[str, Any]:
+        with self._lock:
+            data = self._read_task_data(task_id)
+            detail = data["detail"]
+            target_item = next((item for item in detail["items"] if item["itemId"] == item_id), None)
+            if target_item is None:
+                raise TaskServiceError("任务图片不存在")
+            if target_item["status"] in {"uploading", "submitted", "processing"}:
+                raise TaskServiceError("图片正在处理中，暂不能删除")
+            deleted_files = self._delete_item_files(data, item_id)
+            detail["items"] = [item for item in detail["items"] if item["itemId"] != item_id]
+            data["files"] = [item for item in data["files"] if item["itemId"] != item_id]
+            results = data.get("results", {})
+            results.pop(item_id, None)
+            if not detail["items"]:
+                deleted_files += self._delete_task_storage(task_id)
+                return {"deletedTask": True, "deletedItem": True, "deletedFiles": deleted_files, "task": None}
+            detail["total"] = len(detail["items"])
+            detail["logs"].append(f"已移除图片: {target_item['fileName']}")
+            self._refresh_counts(detail)
+            detail["status"] = "failed" if detail["failed"] == detail["total"] else "done"
+            self._write_task(task_id, detail, data["files"], results)
+            return {"deletedTask": False, "deletedItem": True, "deletedFiles": deleted_files, "task": TaskDetail(**detail)}
+
     def cleanup_expired_tasks(self) -> dict[str, int]:
         with self._lock:
             deleted_tasks = 0
@@ -277,6 +301,21 @@ class TaskService:
                 deleted_count += len([item for item in path.rglob("*") if item.is_file()])
                 shutil.rmtree(path, ignore_errors=True)
             else:
+                path.unlink(missing_ok=True)
+                deleted_count += 1
+        return deleted_count
+
+    def _delete_item_files(self, data: dict[str, Any], item_id: str) -> int:
+        deleted_count = 0
+        paths: list[Path] = []
+        result_path = data.get("results", {}).get(item_id)
+        if result_path:
+            paths.append(Path(result_path))
+        file_info = next((item for item in data.get("files", []) if item["itemId"] == item_id), None)
+        if file_info and file_info.get("path"):
+            paths.append(Path(file_info["path"]))
+        for path in paths:
+            if path.exists() and path.is_file():
                 path.unlink(missing_ok=True)
                 deleted_count += 1
         return deleted_count

@@ -41,3 +41,10 @@ export interface ClearTasksResponse {
   deletedTasks: number;
   deletedFiles: number;
 }
+
+export interface DeleteTaskItemResponse {
+  deletedTask: boolean;
+  deletedItem: boolean;
+  deletedFiles: number;
+  task: TaskDetail | null;
+}

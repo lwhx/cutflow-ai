@@ -5,7 +5,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from app.core.config import get_settings
-from app.schemas.task import ClearTasksResponse, CreateTaskResponse, TaskDetail, TaskListResponse, TaskMode
+from app.schemas.task import ClearTasksResponse, CreateTaskResponse, DeleteTaskItemResponse, TaskDetail, TaskListResponse, TaskMode
 from app.services.archive_service import ArchiveService, ArchiveServiceError
 from app.services.image_service import ImageServiceError
 from app.services.task_service import TaskService, TaskServiceError
@@ -53,6 +53,15 @@ def get_task(task_id: str) -> TaskDetail:
 def pause_task(task_id: str) -> TaskDetail:
     try:
         return task_service.pause_task(task_id)
+    except TaskServiceError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@router.delete("/{task_id}/items/{item_id}", response_model=DeleteTaskItemResponse)
+def delete_task_item(task_id: str, item_id: str) -> DeleteTaskItemResponse:
+    try:
+        result = task_service.delete_task_item(task_id, item_id)
+        return DeleteTaskItemResponse(**result)
     except TaskServiceError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
 

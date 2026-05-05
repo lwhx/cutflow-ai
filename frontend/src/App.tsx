@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AxiosError } from 'axios';
-import { clearTasks, createTask, getTask, listTasks, pauseTask } from './api/taskApi';
+import { clearTasks, createTask, deleteTaskItem, getTask, listTasks, pauseTask } from './api/taskApi';
 import LogPanel from './components/LogPanel';
 import ModeSelector from './components/ModeSelector';
 import TaskList from './components/TaskList';
@@ -131,21 +131,37 @@ export default function App() {
     handleItemsChange(Array.from(map.values()));
   };
 
-  const handleRemoveFile = (index: number) => {
+  const handleRemoveFile = async (index: number) => {
     const target = displayItems[index];
     if (!target) {
       return;
     }
-    if (restoredItems.some((item) => item.fileKey === target.fileKey)) {
-      setRestoredTaskIds((taskIds) => {
-        const nextTaskIds = new Set(taskIds);
-        processedTasks.forEach((detail) => {
-          if (detail.items.some((item) => item.fileKey === target.fileKey)) {
-            nextTaskIds.delete(detail.taskId);
+    const taskItemRecord = taskItemsByFileKey.get(target.fileKey);
+    if (restoredItems.some((item) => item.fileKey === target.fileKey) && taskItemRecord) {
+      try {
+        const result = await deleteTaskItem(taskItemRecord.taskId, taskItemRecord.item.itemId);
+        setProcessedTasks((tasks) => {
+          if (result.deletedTask || !result.task) {
+            return tasks.filter((detail) => detail.taskId !== taskItemRecord.taskId);
           }
+          return tasks.map((detail) => detail.taskId === result.task?.taskId ? result.task : detail);
         });
-        return nextTaskIds;
-      });
+        setRestoredTaskIds((taskIds) => {
+          const nextTaskIds = new Set(taskIds);
+          if (result.deletedTask) {
+            nextTaskIds.delete(taskItemRecord.taskId);
+          }
+          return nextTaskIds;
+        });
+        if (task?.taskId === taskItemRecord.taskId) {
+          setTask(result.task);
+        }
+      } catch (requestError) {
+        const errorMessage = requestError instanceof AxiosError
+          ? requestError.response?.data?.detail || requestError.message
+          : '删除历史图片失败';
+        setError(String(errorMessage));
+      }
       return;
     }
     const itemIndex = items.findIndex((item) => item.fileKey === target.fileKey);

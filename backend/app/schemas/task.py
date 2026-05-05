@@ -40,3 +40,10 @@ class TaskListResponse(BaseModel):
 class ClearTasksResponse(BaseModel):
     deletedTasks: int
     deletedFiles: int
+
+
+class DeleteTaskItemResponse(BaseModel):
+    deletedTask: bool
+    deletedItem: bool
+    deletedFiles: int
+    task: TaskDetail | None = None
