@@ -14,6 +14,7 @@ class TaskItem(BaseModel):
     status: TaskItemStatus
     message: str = "等待处理"
     downloadUrl: str | None = None
+    originalUrl: str | None = None
 
 
 class TaskDetail(BaseModel):

@@ -332,45 +332,47 @@ export default function App() {
   }, [preview]);
 
   return (
-    <main className="page">
-      <header className="hero">
-        <div className="hero-content">
-          <p className="eyebrow">Tuding AI Studio</p>
-          <h1>透明背景，一步完成</h1>
-          <p>为电商图、头像、素材图设计的 AI 扣图工作台。拖拽、粘贴或批量上传，自动生成透明 PNG。</p>
-          <div className="hero-metrics" aria-label="功能特性">
-            <span>支持粘贴截图</span>
-            <span>批量自动分组</span>
-            <span>PNG 透明预览</span>
+    <>
+      <main className="page">
+        <header className="hero">
+          <div className="hero-content">
+            <p className="eyebrow">Tuding AI Studio</p>
+            <h1>透明背景，一步完成</h1>
+            <p>为电商图、头像、素材图设计的 AI 扣图工作台。拖拽、粘贴或批量上传，自动生成透明 PNG。</p>
+            <div className="hero-metrics" aria-label="功能特性">
+              <span>支持粘贴截图</span>
+              <span>批量自动分组</span>
+              <span>PNG 透明预览</span>
+            </div>
           </div>
-        </div>
-        <div className="hero-actions">
-          <span>{displayItems.length > 0 ? `已准备 ${displayItems.length} 张图片` : '等待上传图片'}</span>
-          <div className="hero-action-buttons">
-            <button disabled={running || getRunnableItems().length === 0} onClick={handleStart} type="button">
-              {running ? '正在处理...' : '开始智能扣图'}
-            </button>
-            <button className="pause-button" disabled={!running || !task} onClick={handlePause} type="button">
-              暂停
-            </button>
-            <button className="danger-button" disabled={running || processedTasks.length === 0} onClick={handleClearHistory} type="button">
-              清理历史任务
-            </button>
+          <div className="hero-actions">
+            <span>{displayItems.length > 0 ? `已准备 ${displayItems.length} 张图片` : '等待上传图片'}</span>
+            <div className="hero-action-buttons">
+              <button disabled={running || getRunnableItems().length === 0} onClick={handleStart} type="button">
+                {running ? '正在处理...' : '开始智能扣图'}
+              </button>
+              <button className="pause-button" disabled={!running || !task} onClick={handlePause} type="button">
+                暂停
+              </button>
+              <button className="danger-button" disabled={running || processedTasks.length === 0} onClick={handleClearHistory} type="button">
+                清理历史任务
+              </button>
+            </div>
           </div>
-        </div>
-      </header>
-      {error && <div className="error-alert">{error}</div>}
-      <div className="grid">
-        <aside className="left-column">
-          <ModeSelector mode={mode} onChange={setMode} />
-          <UploadPanel items={items} onClear={handleClearFiles} onItemsChange={handleItemsChange} />
-        </aside>
-        <section className="right-column" aria-label="处理结果">
-          <TaskList disabled={running} items={displayItems} onPreview={setPreview} onRemoveFile={handleRemoveFile} previewUrls={filePreviews} task={task} taskItemsByFileKey={taskItemsByFileKey} />
+        </header>
+        {error && <div className="error-alert">{error}</div>}
+        <div className="grid">
+          <aside className="left-column">
+            <ModeSelector mode={mode} onChange={setMode} />
+            <UploadPanel items={items} onClear={handleClearFiles} onItemsChange={handleItemsChange} />
+          </aside>
+          <section className="right-column" aria-label="处理结果">
+            <TaskList disabled={running} items={displayItems} onPreview={setPreview} onRemoveFile={handleRemoveFile} previewUrls={filePreviews} task={task} taskItemsByFileKey={taskItemsByFileKey} />
 
-          <LogPanel logs={task?.logs || []} />
-        </section>
-      </div>
+            <LogPanel logs={task?.logs || []} />
+          </section>
+        </div>
+      </main>
       {preview && (
         <div className="preview-overlay" onClick={() => setPreview(null)} role="presentation">
           <div className="preview-dialog" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label="图片预览">
@@ -401,6 +403,6 @@ export default function App() {
           </div>
         </div>
       )}
-    </main>
+    </>
   );
 }

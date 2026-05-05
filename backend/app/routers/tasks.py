@@ -66,6 +66,15 @@ def delete_task_item(task_id: str, item_id: str) -> DeleteTaskItemResponse:
         raise HTTPException(status_code=404, detail=str(error)) from error
 
 
+@router.get("/{task_id}/items/{item_id}/original")
+def preview_original_item(task_id: str, item_id: str) -> FileResponse:
+    try:
+        original_path = task_service.get_item_original_path(task_id, item_id)
+        return FileResponse(original_path, filename=original_path.name)
+    except TaskServiceError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
 @router.get("/{task_id}/items/{item_id}/download")
 def download_item(task_id: str, item_id: str) -> FileResponse:
     try:

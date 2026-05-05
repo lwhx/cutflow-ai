@@ -39,7 +39,8 @@ function getFallbackItem(item: UploadFileItem): TaskItem {
     fileName: item.file.name,
     status: 'pending',
     message: '等待下次处理',
-    downloadUrl: null
+    downloadUrl: null,
+    originalUrl: null
   };
 }
 
@@ -58,11 +59,15 @@ async function copyResultImage(url: string): Promise<'image' | 'link'> {
 export default function TaskList({ task, items, previewUrls, disabled, taskItemsByFileKey, onRemoveFile, onPreview }: TaskListProps) {
   const [copyTips, setCopyTips] = useState<Record<string, string>>({});
   const copyTimerRef = useRef<number | null>(null);
-  const cards = items.map((uploadItem, index) => ({
-    uploadItem,
-    originalUrl: previewUrls[uploadItem.fileKey] || '',
-    item: taskItemsByFileKey.get(uploadItem.fileKey)?.item || getFallbackItem(uploadItem)
-  }));
+  const cards = items.map((uploadItem) => {
+    const taskItemRecord = taskItemsByFileKey.get(uploadItem.fileKey);
+    const item = taskItemRecord?.item || getFallbackItem(uploadItem);
+    return {
+      uploadItem,
+      originalUrl: previewUrls[uploadItem.fileKey] || item.originalUrl || '',
+      item
+    };
+  });
 
   const handleCopy = async (item: TaskItem, resultUrl: string) => {
     if (copyTimerRef.current) {

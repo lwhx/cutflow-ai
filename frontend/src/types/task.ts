@@ -9,6 +9,7 @@ export interface TaskItem {
   status: TaskItemStatus;
   message: string;
   downloadUrl: string | null;
+  originalUrl: string | null;
 }
 
 export interface TaskItemRecord {

@@ -39,7 +39,13 @@ class TaskService:
             saved_path = self.image_service.save_upload_file(task_id, upload_file)
             item_id = f"item_{index:03d}"
             file_key = file_keys[index - 1] if file_keys and len(file_keys) >= index else item_id
-            items.append(TaskItem(itemId=item_id, fileKey=file_key, fileName=original_name, status="pending"))
+            items.append(TaskItem(
+                itemId=item_id,
+                fileKey=file_key,
+                fileName=original_name,
+                status="pending",
+                originalUrl=f"/api/tasks/{task_id}/items/{item_id}/original",
+            ))
             saved_files.append({"itemId": item_id, "fileKey": file_key, "fileName": original_name, "path": str(saved_path)})
 
         detail = TaskDetail(
@@ -69,6 +75,16 @@ class TaskService:
         path = Path(result_path)
         if not path.exists():
             raise TaskServiceError("结果文件已被删除")
+        return path
+
+    def get_item_original_path(self, task_id: str, item_id: str) -> Path:
+        data = self._read_task_data(task_id)
+        file_info = next((item for item in data.get("files", []) if item["itemId"] == item_id), None)
+        if not file_info or not file_info.get("path"):
+            raise TaskServiceError("原图文件不存在或已清理")
+        path = Path(file_info["path"])
+        if not path.exists():
+            raise TaskServiceError("原图文件已被删除")
         return path
 
     def get_success_result_paths(self, task_id: str) -> list[Path]:
@@ -409,7 +425,6 @@ class TaskService:
             detail["status"] = "failed" if detail["failed"] == detail["total"] else "done"
             detail["logs"].append("全部任务执行完成" if detail["status"] == "done" else "任务执行失败")
             self._write_task(task_id, detail, data["files"], data.get("results", {}))
-        self._cleanup_upload_files(task_id)
 
     @staticmethod
     def _refresh_counts(detail: dict[str, Any]) -> None:
