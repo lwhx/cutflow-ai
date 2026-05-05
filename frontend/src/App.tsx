@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AxiosError } from 'axios';
-import { createTask, getTask, pauseTask } from './api/taskApi';
+import { clearTasks, createTask, getTask, listTasks, pauseTask } from './api/taskApi';
 import LogPanel from './components/LogPanel';
 import ModeSelector from './components/ModeSelector';
 import TaskList from './components/TaskList';
@@ -19,6 +19,7 @@ export default function App() {
   const [error, setError] = useState('');
   const [running, setRunning] = useState(false);
   const [preview, setPreview] = useState<ImagePreview | null>(null);
+  const [restoredTaskIds, setRestoredTaskIds] = useState<Set<string>>(new Set());
   const timerRef = useRef<number | null>(null);
 
   const filePreviews = useObjectUrls(items);
@@ -45,6 +46,23 @@ export default function App() {
   const hasActiveTaskItems = (detail: TaskDetail) => detail.items.some((item) => isActiveTaskItemStatus(item.status));
 
   const shouldKeepPollingTask = (detail: TaskDetail) => detail.status === 'pending' || detail.status === 'processing' || (detail.status === 'paused' && hasActiveTaskItems(detail));
+
+  const restoredItems = useMemo<UploadFileItem[]>(() => {
+    const existingFileKeys = new Set(items.map((item) => item.fileKey));
+    return processedTasks.flatMap((detail) => {
+      if (!restoredTaskIds.has(detail.taskId)) {
+        return [];
+      }
+      return detail.items
+        .filter((item) => !existingFileKeys.has(item.fileKey))
+        .map((item) => ({
+          fileKey: item.fileKey,
+          file: new File([], item.fileName, { type: 'image/png' })
+        }));
+    });
+  }, [items, processedTasks, restoredTaskIds]);
+
+  const displayItems = useMemo(() => [...items, ...restoredItems], [items, restoredItems]);
 
   const syncTaskState = (detail: TaskDetail) => {
     setTask(detail);
@@ -114,11 +132,30 @@ export default function App() {
   };
 
   const handleRemoveFile = (index: number) => {
-    const target = items[index];
-    if (target && processingFileKeys.has(target.fileKey)) {
+    const target = displayItems[index];
+    if (!target) {
       return;
     }
-    handleItemsChange(items.filter((_, itemIndex) => itemIndex !== index));
+    if (restoredItems.some((item) => item.fileKey === target.fileKey)) {
+      setRestoredTaskIds((taskIds) => {
+        const nextTaskIds = new Set(taskIds);
+        processedTasks.forEach((detail) => {
+          if (detail.items.some((item) => item.fileKey === target.fileKey)) {
+            nextTaskIds.delete(detail.taskId);
+          }
+        });
+        return nextTaskIds;
+      });
+      return;
+    }
+    const itemIndex = items.findIndex((item) => item.fileKey === target.fileKey);
+    if (itemIndex < 0) {
+      return;
+    }
+    if (processingFileKeys.has(target.fileKey)) {
+      return;
+    }
+    handleItemsChange(items.filter((_, currentIndex) => currentIndex !== itemIndex));
   };
 
   const handleClearFiles = () => {
@@ -129,7 +166,30 @@ export default function App() {
     handleItemsChange([]);
     setTask(null);
     setProcessedTasks([]);
+    setRestoredTaskIds(new Set());
     setProcessingFileKeys(new Set());
+  };
+
+  const handleClearHistory = async () => {
+    if (running) {
+      setError('任务处理中，请完成或暂停后再清理历史任务');
+      return;
+    }
+    try {
+      const result = await clearTasks();
+      handleItemsChange([]);
+      setTask(null);
+      setProcessedTasks([]);
+      setRestoredTaskIds(new Set());
+      setProcessingFileKeys(new Set());
+      setPreview(null);
+      setError(`已清理 ${result.deletedTasks} 个历史任务，删除 ${result.deletedFiles} 个文件`);
+    } catch (requestError) {
+      const errorMessage = requestError instanceof AxiosError
+        ? requestError.response?.data?.detail || requestError.message
+        : '清理历史任务失败';
+      setError(String(errorMessage));
+    }
   };
 
   const handleStart = async () => {
@@ -175,6 +235,27 @@ export default function App() {
     }
   };
 
+  useEffect(() => {
+    const restoreTasks = async () => {
+      try {
+        const response = await listTasks();
+        const restorableTasks = response.tasks.filter((detail) => detail.items.length > 0);
+        if (restorableTasks.length === 0) {
+          return;
+        }
+        setProcessedTasks(restorableTasks);
+        setTask(restorableTasks[0]);
+        setRestoredTaskIds(new Set(restorableTasks.map((detail) => detail.taskId)));
+      } catch (requestError) {
+        const errorMessage = requestError instanceof AxiosError
+          ? requestError.response?.data?.detail || requestError.message
+          : '恢复历史任务失败';
+        setError(String(errorMessage));
+      }
+    };
+    restoreTasks();
+  }, []);
+
   useEffect(() => () => stopPolling(), []);
 
   useEffect(() => {
@@ -219,13 +300,16 @@ export default function App() {
           </div>
         </div>
         <div className="hero-actions">
-          <span>{items.length > 0 ? `已准备 ${items.length} 张图片` : '等待上传图片'}</span>
+          <span>{displayItems.length > 0 ? `已准备 ${displayItems.length} 张图片` : '等待上传图片'}</span>
           <div className="hero-action-buttons">
             <button disabled={running || getRunnableItems().length === 0} onClick={handleStart} type="button">
               {running ? '正在处理...' : '开始智能扣图'}
             </button>
             <button className="pause-button" disabled={!running || !task} onClick={handlePause} type="button">
               暂停
+            </button>
+            <button className="danger-button" disabled={running || processedTasks.length === 0} onClick={handleClearHistory} type="button">
+              清理历史任务
             </button>
           </div>
         </div>
@@ -237,7 +321,7 @@ export default function App() {
           <UploadPanel items={items} onClear={handleClearFiles} onItemsChange={handleItemsChange} />
         </aside>
         <section className="right-column" aria-label="处理结果">
-          <TaskList disabled={running} items={items} onPreview={setPreview} onRemoveFile={handleRemoveFile} previewUrls={filePreviews} task={task} taskItemsByFileKey={taskItemsByFileKey} />
+          <TaskList disabled={running} items={displayItems} onPreview={setPreview} onRemoveFile={handleRemoveFile} previewUrls={filePreviews} task={task} taskItemsByFileKey={taskItemsByFileKey} />
 
           <LogPanel logs={task?.logs || []} />
         </section>

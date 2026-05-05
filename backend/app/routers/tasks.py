@@ -5,7 +5,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from app.core.config import get_settings
-from app.schemas.task import CreateTaskResponse, TaskDetail, TaskMode
+from app.schemas.task import ClearTasksResponse, CreateTaskResponse, TaskDetail, TaskListResponse, TaskMode
 from app.services.archive_service import ArchiveService, ArchiveServiceError
 from app.services.image_service import ImageServiceError
 from app.services.task_service import TaskService, TaskServiceError
@@ -28,6 +28,17 @@ def create_task(
         return CreateTaskResponse(taskId=detail.taskId, total=detail.total, status=detail.status)
     except (TaskServiceError, ImageServiceError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@router.get("", response_model=TaskListResponse)
+def list_tasks() -> TaskListResponse:
+    return TaskListResponse(tasks=task_service.list_tasks())
+
+
+@router.delete("", response_model=ClearTasksResponse)
+def clear_tasks() -> ClearTasksResponse:
+    result = task_service.clear_all_history_tasks()
+    return ClearTasksResponse(**result)
 
 
 @router.get("/{task_id}", response_model=TaskDetail)

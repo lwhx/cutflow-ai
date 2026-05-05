@@ -288,11 +288,28 @@ class TudingAIClient:
         raise TudingAIError(f"批量任务超时: {parent_task_id}")
 
     @staticmethod
-    def download_file(url: str, save_path: Path) -> None:
-        response = requests.get(url, stream=True, timeout=60)
-        response.raise_for_status()
-        save_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(save_path, "wb") as file:
-            for chunk in response.iter_content(chunk_size=8192):
-                if chunk:
-                    file.write(chunk)
+    def download_file(url: str, save_path: Path, retry_attempts: int = 3, retry_interval_seconds: float = 3.0) -> None:
+        last_error: Exception | None = None
+        for attempt in range(retry_attempts):
+            response: requests.Response | None = None
+            try:
+                response = requests.get(url, stream=True, timeout=60)
+                response.raise_for_status()
+                save_path.parent.mkdir(parents=True, exist_ok=True)
+                temp_path = save_path.with_suffix(f"{save_path.suffix}.tmp")
+                with open(temp_path, "wb") as file:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            file.write(chunk)
+                temp_path.replace(save_path)
+                return
+            except requests.RequestException as error:
+                last_error = error
+                if attempt < retry_attempts - 1:
+                    time.sleep(retry_interval_seconds * (attempt + 1))
+            finally:
+                if response is not None:
+                    response.close()
+        if last_error is not None:
+            raise last_error
+        raise TudingAIError(f"下载结果失败: {url}")

@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { CreateTaskResponse, TaskDetail, TaskMode } from '../types/task';
+import type { ClearTasksResponse, CreateTaskResponse, TaskDetail, TaskListResponse, TaskMode } from '../types/task';
 import type { UploadFileItem } from '../types/upload';
 
 const api = axios.create({
@@ -20,6 +20,16 @@ export async function createTask(items: UploadFileItem[], mode: TaskMode, border
 
 export async function getTask(taskId: string): Promise<TaskDetail> {
   const response = await api.get<TaskDetail>(`/api/tasks/${taskId}`);
+  return response.data;
+}
+
+export async function listTasks(): Promise<TaskListResponse> {
+  const response = await api.get<TaskListResponse>('/api/tasks');
+  return response.data;
+}
+
+export async function clearTasks(): Promise<ClearTasksResponse> {
+  const response = await api.delete<ClearTasksResponse>('/api/tasks');
   return response.data;
 }
 

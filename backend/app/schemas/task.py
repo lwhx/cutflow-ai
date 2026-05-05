@@ -31,3 +31,12 @@ class CreateTaskResponse(BaseModel):
     taskId: str
     total: int
     status: TaskStatus
+
+
+class TaskListResponse(BaseModel):
+    tasks: list[TaskDetail]
+
+
+class ClearTasksResponse(BaseModel):
+    deletedTasks: int
+    deletedFiles: int

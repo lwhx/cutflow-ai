@@ -32,3 +32,12 @@ export interface CreateTaskResponse {
   total: number;
   status: TaskStatus;
 }
+
+export interface TaskListResponse {
+  tasks: TaskDetail[];
+}
+
+export interface ClearTasksResponse {
+  deletedTasks: number;
+  deletedFiles: number;
+}

@@ -26,6 +26,9 @@ const statusText: Record<TaskItemStatus, string> = {
 };
 
 function formatSize(size: number): string {
+  if (size === 0) {
+    return '历史任务';
+  }
   return `${(size / 1024 / 1024).toFixed(2)} MB`;
 }
 
@@ -167,6 +170,11 @@ export default function TaskList({ task, items, previewUrls, disabled, taskItems
                   <span>原图</span>
                   {originalUrl ? (
                     <img alt={`${uploadItem.file.name} 原图`} src={originalUrl} />
+                  ) : uploadItem.file.size === 0 ? (
+                    <div className="result-placeholder pending">
+                      <strong>原图已清理</strong>
+                      <p>服务器仅保留扣图结果</p>
+                    </div>
                   ) : (
                     <div className="result-placeholder pending">
                       <strong>正在生成预览</strong>

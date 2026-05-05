@@ -1,8 +1,9 @@
 import json
+import shutil
 import tempfile
 import threading
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +28,7 @@ class TaskService:
         self._provider_lock = threading.Lock()
 
     def create_task(self, files: list[UploadFile], mode: TaskMode, border: int, file_keys: list[str] | None = None) -> TaskDetail:
+        self.cleanup_expired_tasks()
         if not files:
             raise TaskServiceError("请至少上传一张图片")
         task_id = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}"
@@ -73,6 +75,53 @@ class TaskService:
         data = self._read_task_data(task_id)
         paths = [Path(path) for path in data.get("results", {}).values()]
         return [path for path in paths if path.exists()]
+
+    def list_tasks(self) -> list[TaskDetail]:
+        self.cleanup_expired_tasks()
+        task_files = sorted(self.settings.task_dir.glob("*.json"), key=lambda path: path.stat().st_mtime, reverse=True)
+        tasks: list[TaskDetail] = []
+        for task_file in task_files:
+            try:
+                with open(task_file, "r", encoding="utf-8") as file:
+                    data = json.load(file)
+                tasks.append(TaskDetail(**data["detail"]))
+            except Exception:
+                continue
+        return tasks
+
+    def clear_all_history_tasks(self) -> dict[str, int]:
+        with self._lock:
+            deleted_tasks = 0
+            deleted_files = 0
+            task_ids = [path.stem for path in self.settings.task_dir.glob("*.json")]
+            for task_id in task_ids:
+                deleted_count = self._delete_task_storage(task_id)
+                if deleted_count > 0:
+                    deleted_tasks += 1
+                    deleted_files += deleted_count
+            return {"deletedTasks": deleted_tasks, "deletedFiles": deleted_files}
+
+    def cleanup_expired_tasks(self) -> dict[str, int]:
+        with self._lock:
+            deleted_tasks = 0
+            deleted_files = 0
+            expire_before = datetime.now(timezone.utc) - timedelta(hours=self.settings.task_expire_hours)
+            for task_file in list(self.settings.task_dir.glob("*.json")):
+                try:
+                    with open(task_file, "r", encoding="utf-8") as file:
+                        data = json.load(file)
+                    detail = data["detail"]
+                except Exception:
+                    continue
+                if detail.get("status") in {"pending", "processing"}:
+                    continue
+                if datetime.fromtimestamp(task_file.stat().st_mtime, tz=timezone.utc) > expire_before:
+                    continue
+                deleted_count = self._delete_task_storage(task_file.stem)
+                if deleted_count > 0:
+                    deleted_tasks += 1
+                    deleted_files += deleted_count
+            return {"deletedTasks": deleted_tasks, "deletedFiles": deleted_files}
 
     def pause_task(self, task_id: str) -> TaskDetail:
         with self._lock:
@@ -218,6 +267,25 @@ class TaskService:
         result_dir.mkdir(parents=True, exist_ok=True)
         return result_dir / self.image_service.build_output_name(file_name)
 
+    def _delete_task_storage(self, task_id: str) -> int:
+        deleted_count = 0
+        paths = [self._task_file(task_id), self.settings.upload_dir / task_id, self.settings.result_dir / task_id]
+        for path in paths:
+            if not path.exists():
+                continue
+            if path.is_dir():
+                deleted_count += len([item for item in path.rglob("*") if item.is_file()])
+                shutil.rmtree(path, ignore_errors=True)
+            else:
+                path.unlink(missing_ok=True)
+                deleted_count += 1
+        return deleted_count
+
+    def _cleanup_upload_files(self, task_id: str) -> None:
+        upload_dir = self.settings.upload_dir / task_id
+        if upload_dir.exists():
+            shutil.rmtree(upload_dir, ignore_errors=True)
+
     def _task_file(self, task_id: str) -> Path:
         return self.settings.task_dir / f"{task_id}.json"
 
@@ -302,6 +370,7 @@ class TaskService:
             detail["status"] = "failed" if detail["failed"] == detail["total"] else "done"
             detail["logs"].append("全部任务执行完成" if detail["status"] == "done" else "任务执行失败")
             self._write_task(task_id, detail, data["files"], data.get("results", {}))
+        self._cleanup_upload_files(task_id)
 
     @staticmethod
     def _refresh_counts(detail: dict[str, Any]) -> None:
