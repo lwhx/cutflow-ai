@@ -3,10 +3,14 @@ export interface UploadFileItem {
   fileKey: string;
 }
 
+function createCompatibleRandomId(): string {
+  return globalThis.crypto?.randomUUID?.() || `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+}
+
 export function createUploadFileItem(file: File): UploadFileItem {
   return {
     file,
-    fileKey: `${file.name}_${file.size}_${file.lastModified}_${crypto.randomUUID()}`
+    fileKey: `${file.name}_${file.size}_${file.lastModified}_${createCompatibleRandomId()}`
   };
 }
 
