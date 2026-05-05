@@ -239,10 +239,13 @@ class TudingAIClient:
             detail = self.task_detail(task_id)
             parsed = self._parse_task_result_str(detail.get("taskResult", ""))
             if detail.get("taskStatus") == 1 and parsed.get("status") == 1 and parsed.get("result"):
+                result_url = parsed.get("result")
+                if result_url and not result_url.startswith(("http://", "https://")):
+                    result_url = f"https://aicdn.feilianyun.cn{result_url}" if result_url.startswith("/") else f"https://aicdn.feilianyun.cn/{result_url}"
                 return {
                     "task_id": detail.get("taskId"),
                     "image": detail.get("image"),
-                    "result_url": parsed.get("result"),
+                    "result_url": result_url,
                     "raw": detail,
                 }
             time.sleep(interval_seconds)
@@ -252,22 +255,28 @@ class TudingAIClient:
     def flatten_batch_task(self, detail: dict[str, Any]) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
         parent_result = self._parse_task_result_str(detail.get("taskResult", ""))
+        parent_result_url = parent_result.get("result")
+        if parent_result_url and not parent_result_url.startswith(("http://", "https://")):
+            parent_result_url = f"https://aicdn.feilianyun.cn{parent_result_url}" if parent_result_url.startswith("/") else f"https://aicdn.feilianyun.cn/{parent_result_url}"
         items.append({
             "image": detail.get("image"),
             "task_id": detail.get("taskId"),
             "task_status": detail.get("taskStatus"),
             "result_status": parent_result.get("status"),
-            "result_url": parent_result.get("result"),
+            "result_url": parent_result_url,
             "is_parent": True,
         })
         for sub_task in detail.get("subTaskList", []) or []:
             sub_result = self._parse_task_result_str(sub_task.get("taskResult", ""))
+            sub_result_url = sub_result.get("result")
+            if sub_result_url and not sub_result_url.startswith(("http://", "https://")):
+                sub_result_url = f"https://aicdn.feilianyun.cn{sub_result_url}" if sub_result_url.startswith("/") else f"https://aicdn.feilianyun.cn/{sub_result_url}"
             items.append({
                 "image": sub_task.get("image"),
                 "task_id": sub_task.get("taskId"),
                 "task_status": sub_task.get("taskStatus"),
                 "result_status": sub_result.get("status"),
-                "result_url": sub_result.get("result"),
+                "result_url": sub_result_url,
                 "is_parent": False,
             })
         return items
@@ -288,12 +297,12 @@ class TudingAIClient:
         raise TudingAIError(f"批量任务超时: {parent_task_id}")
 
     @staticmethod
-    def download_file(url: str, save_path: Path, retry_attempts: int = 3, retry_interval_seconds: float = 3.0) -> None:
+    def download_file(url: str, save_path: Path, retry_attempts: int = 5, retry_interval_seconds: float = 5.0) -> None:
         last_error: Exception | None = None
         for attempt in range(retry_attempts):
             response: requests.Response | None = None
             try:
-                response = requests.get(url, stream=True, timeout=60)
+                response = requests.get(url, stream=True, timeout=120)
                 response.raise_for_status()
                 save_path.parent.mkdir(parents=True, exist_ok=True)
                 temp_path = save_path.with_suffix(f"{save_path.suffix}.tmp")
