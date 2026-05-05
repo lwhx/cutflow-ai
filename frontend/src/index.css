@@ -961,6 +961,14 @@ button.image-tile,
   color: #075985;
 }
 
+.preview-label {
+  color: #ea580c;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  margin: 0 0 6px;
+}
+
 .preview-overlay {
   align-items: center;
   backdrop-filter: blur(14px);
@@ -975,23 +983,29 @@ button.image-tile,
 
 .preview-dialog {
   animation: modalIn 0.24s ease both;
-  background: linear-gradient(180deg, #f8fafc, #ffffff);
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  border-radius: 30px;
+  background: linear-gradient(180deg, #f5f0e8, #ffffff);
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  border-radius: 26px;
   box-shadow: 0 34px 100px rgba(0, 0, 0, 0.48);
-  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  height: min(90vh, 820px);
   max-width: 1080px;
-  overflow: auto;
-  padding: 22px;
+  overflow: hidden;
+  padding: 18px;
   width: min(100%, 1080px);
 }
 
 .preview-header {
-  align-items: center;
+  align-items: flex-start;
   display: flex;
   gap: 16px;
   justify-content: space-between;
-  margin-bottom: 16px;
+}
+
+.preview-header > div:first-child {
+  min-width: 0;
 }
 
 .preview-header strong,
@@ -1000,36 +1014,82 @@ button.image-tile,
 }
 
 .preview-header strong {
-  color: #0f172a;
+  color: #111827;
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .preview-header span {
   color: #64748b;
   font-size: 0.92rem;
   margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.preview-toolbar .secondary-button {
+  border-radius: 999px;
+  box-shadow: none;
+  min-width: 68px;
+  padding: 8px 14px;
 }
 
 .preview-stage {
   align-items: center;
-  border: 1px solid #dbe3ef;
+  background: linear-gradient(180deg, #fcfbf8, #f7f4ee);
+  border: 1px solid #e7dfd4;
   border-radius: 22px;
   display: flex;
+  flex: 1;
   justify-content: center;
-  min-height: 460px;
   overflow: hidden;
-  padding: 20px;
+  padding: 24px;
 }
 
-.preview-stage img {
+.preview-frame {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  transform-origin: center center;
+  transition: transform 0.18s ease;
+}
+
+.preview-frame img {
   display: block;
-  max-height: 72vh;
+  max-height: calc(90vh - 170px);
   max-width: 100%;
   object-fit: contain;
 }
 
-.preview-dialog .primary-link-button {
-  margin-top: 16px;
+.preview-footer {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
 }
+
+.preview-footer span {
+  color: #64748b;
+  font-size: 0.92rem;
+}
+
+.preview-footer .primary-link-button {
+  margin-top: 0;
+}
+
+
 
 @keyframes pageIn {
   from {

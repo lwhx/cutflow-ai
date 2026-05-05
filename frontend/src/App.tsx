@@ -19,8 +19,21 @@ export default function App() {
   const [error, setError] = useState('');
   const [running, setRunning] = useState(false);
   const [preview, setPreview] = useState<ImagePreview | null>(null);
+  const [previewScale, setPreviewScale] = useState(1);
   const [restoredTaskIds, setRestoredTaskIds] = useState<Set<string>>(new Set());
   const timerRef = useRef<number | null>(null);
+
+  const resetPreviewScale = () => {
+    setPreviewScale(1);
+  };
+
+  const zoomOutPreview = () => {
+    setPreviewScale((scale) => Math.max(0.5, Number((scale - 0.1).toFixed(2))));
+  };
+
+  const zoomInPreview = () => {
+    setPreviewScale((scale) => Math.min(2.5, Number((scale + 0.1).toFixed(2))));
+  };
 
   const filePreviews = useObjectUrls(items);
 
@@ -291,11 +304,21 @@ export default function App() {
 
   useEffect(() => {
     if (!preview) {
+      setPreviewScale(1);
       return;
     }
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setPreview(null);
+      }
+      if (event.key === '=' || event.key === '+') {
+        zoomInPreview();
+      }
+      if (event.key === '-') {
+        zoomOutPreview();
+      }
+      if (event.key === '0') {
+        resetPreviewScale();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -347,17 +370,28 @@ export default function App() {
           <div className="preview-dialog" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label="图片预览">
             <div className="preview-header">
               <div>
+                <p className="preview-label">VIEWER</p>
                 <strong>{preview.title}</strong>
                 <span>{preview.kind}</span>
               </div>
-              <button className="secondary-button" onClick={() => setPreview(null)} type="button">关闭</button>
+              <div className="preview-toolbar">
+                <button className="secondary-button" onClick={resetPreviewScale} type="button">适应窗口</button>
+                <button className="secondary-button" onClick={zoomOutPreview} type="button">缩小</button>
+                <button className="secondary-button" onClick={zoomInPreview} type="button">放大</button>
+                <button className="secondary-button" onClick={() => setPreview(null)} type="button">关闭</button>
+              </div>
             </div>
-            <div className="preview-stage checkerboard-bg">
-              <img alt={preview.title} src={preview.src} />
+            <div className="preview-stage">
+              <div className="preview-frame" style={{ transform: `scale(${previewScale})` }}>
+                <img alt={preview.title} src={preview.src} />
+              </div>
             </div>
-            {preview.downloadUrl && (
-              <a className="primary-link-button" download href={preview.downloadUrl}>下载 PNG</a>
-            )}
+            <div className="preview-footer">
+              <span>缩放 {Math.round(previewScale * 100)}%</span>
+              {preview.downloadUrl && (
+                <a className="primary-link-button" download href={preview.downloadUrl}>下载 PNG</a>
+              )}
+            </div>
           </div>
         </div>
       )}
