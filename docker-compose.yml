@@ -1,15 +1,12 @@
 services:
   cutflow-ai:
-    build:
-      context: .
-      dockerfile: Dockerfile
     image: ghcr.io/lwhx/cutflow-ai:latest
     env_file:
       - .env
     volumes:
       - ./data:/app/data
     ports:
-      - "80:8000"
+      - "5730:8000"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
       interval: 30s
