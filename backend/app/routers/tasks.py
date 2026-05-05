@@ -21,9 +21,10 @@ def create_task(
     files: Annotated[list[UploadFile], File()],
     mode: Annotated[TaskMode, Form()] = "single",
     border: Annotated[int, Form()] = 2,
+    fileKeys: Annotated[list[str] | None, Form()] = None,
 ) -> CreateTaskResponse:
     try:
-        detail = task_service.create_task(files, mode, border)
+        detail = task_service.create_task(files, mode, border, fileKeys)
         return CreateTaskResponse(taskId=detail.taskId, total=detail.total, status=detail.status)
     except (TaskServiceError, ImageServiceError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error

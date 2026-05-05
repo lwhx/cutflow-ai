@@ -5,15 +5,21 @@ import LogPanel from './components/LogPanel';
 import ModeSelector from './components/ModeSelector';
 import TaskList from './components/TaskList';
 import UploadPanel from './components/UploadPanel';
+import { useObjectUrls } from './hooks/useObjectUrls';
+import type { ImagePreview } from './types/preview';
 import type { TaskDetail, TaskMode } from './types/task';
+import { createUploadFileItem, extractImageFilesFromClipboardData, type UploadFileItem } from './types/upload';
 
 export default function App() {
   const [mode, setMode] = useState<TaskMode>('single');
-  const [files, setFiles] = useState<File[]>([]);
+  const [items, setItems] = useState<UploadFileItem[]>([]);
   const [task, setTask] = useState<TaskDetail | null>(null);
   const [error, setError] = useState('');
   const [running, setRunning] = useState(false);
+  const [preview, setPreview] = useState<ImagePreview | null>(null);
   const timerRef = useRef<number | null>(null);
+
+  const filePreviews = useObjectUrls(items.map((item) => item.file));
 
   const stopPolling = () => {
     if (timerRef.current) {
@@ -34,15 +40,42 @@ export default function App() {
     }, 1500);
   };
 
+  const handleItemsChange = (nextItems: UploadFileItem[]) => {
+    setItems(nextItems);
+    setTask(null);
+    setError('');
+  };
+
+  const appendImageFiles = (nextFiles: File[]) => {
+    const map = new Map<string, UploadFileItem>();
+    items.forEach((item) => map.set(`${item.file.name}_${item.file.size}_${item.file.lastModified}`, item));
+    nextFiles.forEach((file) => map.set(`${file.name}_${file.size}_${file.lastModified}`, createUploadFileItem(file)));
+    handleItemsChange(Array.from(map.values()));
+  };
+
+  const handleRemoveFile = (index: number) => {
+    if (running) {
+      return;
+    }
+    handleItemsChange(items.filter((_, itemIndex) => itemIndex !== index));
+  };
+
+  const handleClearFiles = () => {
+    if (running) {
+      return;
+    }
+    handleItemsChange([]);
+  };
+
   const handleStart = async () => {
-    if (files.length === 0) {
+    if (items.length === 0) {
       setError('请先选择图片');
       return;
     }
     setError('');
     setRunning(true);
     try {
-      const created = await createTask(files, mode, 2);
+      const created = await createTask(items, mode, 2);
       const detail = await getTask(created.taskId);
       setTask(detail);
       startPolling(created.taskId);
@@ -57,29 +90,87 @@ export default function App() {
 
   useEffect(() => () => stopPolling(), []);
 
+  useEffect(() => {
+    const handlePaste = (event: ClipboardEvent) => {
+      if (running) {
+        return;
+      }
+      if (!event.clipboardData) {
+        return;
+      }
+      const pastedImages = extractImageFilesFromClipboardData(event.clipboardData);
+      if (pastedImages.length > 0) {
+        event.preventDefault();
+        appendImageFiles(pastedImages);
+      }
+    };
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [items, running]);
+
+  useEffect(() => {
+    if (!preview) {
+      return;
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setPreview(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [preview]);
+
   return (
     <main className="page">
       <header className="hero">
-        <div>
-          <p className="eyebrow">Tuding AI Web Client</p>
-          <h1>图丁 AI 扣图工具</h1>
-          <p>上传图片后自动扣图，支持单图、多图、拖拽和文件夹上传，账号密码由服务端环境变量统一管理。</p>
+        <div className="hero-content">
+          <p className="eyebrow">Tuding AI Studio</p>
+          <h1>透明背景，一步完成</h1>
+          <p>为电商图、头像、素材图设计的 AI 扣图工作台。拖拽、粘贴或批量上传，自动生成透明 PNG。</p>
+          <div className="hero-metrics" aria-label="功能特性">
+            <span>支持粘贴截图</span>
+            <span>批量自动分组</span>
+            <span>PNG 透明预览</span>
+          </div>
         </div>
-        <button disabled={running || files.length === 0} onClick={handleStart} type="button">
-          {running ? '处理中...' : '开始扣图'}
-        </button>
+        <div className="hero-actions">
+          <span>{items.length > 0 ? `已准备 ${items.length} 张图片` : '等待上传图片'}</span>
+          <button disabled={running || items.length === 0} onClick={handleStart} type="button">
+            {running ? '正在处理...' : '开始智能扣图'}
+          </button>
+        </div>
       </header>
       {error && <div className="error-alert">{error}</div>}
       <div className="grid">
-        <div className="left-column">
+        <aside className="left-column">
           <ModeSelector mode={mode} onChange={setMode} />
-          <UploadPanel disabled={running} files={files} onFilesChange={setFiles} />
-        </div>
-        <div className="right-column">
-          <TaskList task={task} />
+          <UploadPanel disabled={running} items={items} onClear={handleClearFiles} onItemsChange={handleItemsChange} />
+        </aside>
+        <section className="right-column" aria-label="处理结果">
+          <TaskList disabled={running} items={items} onPreview={setPreview} onRemoveFile={handleRemoveFile} previewUrls={filePreviews} task={task} />
           <LogPanel logs={task?.logs || []} />
-        </div>
+        </section>
       </div>
+      {preview && (
+        <div className="preview-overlay" onClick={() => setPreview(null)} role="presentation">
+          <div className="preview-dialog" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label="图片预览">
+            <div className="preview-header">
+              <div>
+                <strong>{preview.title}</strong>
+                <span>{preview.kind}</span>
+              </div>
+              <button className="secondary-button" onClick={() => setPreview(null)} type="button">关闭</button>
+            </div>
+            <div className="preview-stage checkerboard-bg">
+              <img alt={preview.title} src={preview.src} />
+            </div>
+            {preview.downloadUrl && (
+              <a className="primary-link-button" download href={preview.downloadUrl}>下载 PNG</a>
+            )}
+          </div>
+        </div>
+      )}
     </main>
   );
 }

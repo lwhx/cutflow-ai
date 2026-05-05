@@ -4,6 +4,7 @@ export type TaskMode = 'single' | 'batch';
 
 export interface TaskItem {
   itemId: string;
+  fileKey: string;
   fileName: string;
   status: TaskItemStatus;
   message: string;

@@ -24,7 +24,7 @@ class TaskService:
         self.client = TudingAIClient(settings)
         self._lock = threading.Lock()
 
-    def create_task(self, files: list[UploadFile], mode: TaskMode, border: int) -> TaskDetail:
+    def create_task(self, files: list[UploadFile], mode: TaskMode, border: int, file_keys: list[str] | None = None) -> TaskDetail:
         if not files:
             raise TaskServiceError("请至少上传一张图片")
         task_id = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}"
@@ -34,8 +34,9 @@ class TaskService:
             original_name = Path(upload_file.filename or f"image_{index}.png").name
             saved_path = self.image_service.save_upload_file(task_id, upload_file)
             item_id = f"item_{index:03d}"
-            items.append(TaskItem(itemId=item_id, fileName=original_name, status="pending"))
-            saved_files.append({"itemId": item_id, "fileName": original_name, "path": str(saved_path)})
+            file_key = file_keys[index - 1] if file_keys and len(file_keys) >= index else item_id
+            items.append(TaskItem(itemId=item_id, fileKey=file_key, fileName=original_name, status="pending"))
+            saved_files.append({"itemId": item_id, "fileKey": file_key, "fileName": original_name, "path": str(saved_path)})
 
         detail = TaskDetail(
             taskId=task_id,

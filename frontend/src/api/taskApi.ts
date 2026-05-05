@@ -1,13 +1,17 @@
 import axios from 'axios';
 import type { CreateTaskResponse, TaskDetail, TaskMode } from '../types/task';
+import type { UploadFileItem } from '../types/upload';
 
 const api = axios.create({
   baseURL: ''
 });
 
-export async function createTask(files: File[], mode: TaskMode, border = 2): Promise<CreateTaskResponse> {
+export async function createTask(items: UploadFileItem[], mode: TaskMode, border = 2): Promise<CreateTaskResponse> {
   const formData = new FormData();
-  files.forEach((file) => formData.append('files', file));
+  items.forEach((item) => {
+    formData.append('files', item.file);
+    formData.append('fileKeys', item.fileKey);
+  });
   formData.append('mode', mode);
   formData.append('border', String(border));
   const response = await api.post<CreateTaskResponse>('/api/tasks', formData);

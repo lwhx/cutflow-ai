@@ -9,6 +9,7 @@ TaskMode = Literal["single", "batch"]
 
 class TaskItem(BaseModel):
     itemId: str
+    fileKey: str
     fileName: str
     status: TaskItemStatus
     message: str = "等待处理"

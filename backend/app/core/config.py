@@ -6,6 +6,11 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+ROOT_ENV_FILE = PROJECT_ROOT / ".env"
+BACKEND_ENV_FILE = PROJECT_ROOT / "backend" / ".env"
+
+
 class Settings(BaseSettings):
     tuding_account: str = Field(default="", alias="TUDING_ACCOUNT")
     tuding_password: str = Field(default="", alias="TUDING_PASSWORD")
@@ -17,7 +22,7 @@ class Settings(BaseSettings):
     task_expire_hours: int = Field(default=24, alias="TASK_EXPIRE_HOURS")
     cors_origins: str = Field(default="*", alias="CORS_ORIGINS")
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(env_file=(BACKEND_ENV_FILE, ROOT_ENV_FILE), env_file_encoding="utf-8", extra="ignore")
 
     @property
     def cookie_dir(self) -> Path:
